@@ -18,7 +18,7 @@ scheduler = BackgroundScheduler(jobstores=jobstores, job_defaults={'misfire_grac
 scheduler.start()
 
 
-# ── MESSAGE LOG DB ──────────────────────────────────────────
+# ── DB INIT ─────────────────────────────────────────────────
 def init_log_db():
     con = sqlite3.connect(DB_PATH)
     con.execute("""CREATE TABLE IF NOT EXISTS message_log (
@@ -28,6 +28,12 @@ def init_log_db():
         status    TEXT NOT NULL DEFAULT 'sent',
         source    TEXT NOT NULL DEFAULT 'manual',
         sent_at   TEXT NOT NULL
+    )""")
+    con.execute("""CREATE TABLE IF NOT EXISTS contacts (
+        id        INTEGER PRIMARY KEY AUTOINCREMENT,
+        name      TEXT NOT NULL,
+        phone     TEXT NOT NULL UNIQUE,
+        tags      TEXT NOT NULL DEFAULT ''
     )""")
     con.commit()
     con.close()
@@ -196,6 +202,58 @@ def get_logs():
 def clear_logs():
     con = sqlite3.connect(DB_PATH)
     con.execute("DELETE FROM message_log")
+    con.commit()
+    con.close()
+    return jsonify({"success": True})
+
+
+# ── CONTACTS API ────────────────────────────────────────────
+@app.route('/api/contacts', methods=['GET'])
+def get_contacts():
+    con = sqlite3.connect(DB_PATH)
+    con.row_factory = sqlite3.Row
+    rows = con.execute("SELECT * FROM contacts ORDER BY name ASC").fetchall()
+    con.close()
+    return jsonify([{
+        "id": r["id"], "name": r["name"], "phone": r["phone"],
+        "tags": [t for t in r["tags"].split(",") if t]
+    } for r in rows])
+
+
+@app.route('/api/contacts', methods=['POST'])
+def add_contact():
+    data = request.json
+    name  = (data.get('name') or '').strip()
+    phone = (data.get('phone') or '').strip()
+    tags  = ','.join([t.strip().lower() for t in data.get('tags', []) if t.strip()])
+    if not name or not phone:
+        return jsonify({"error": "name and phone required"}), 400
+    try:
+        con = sqlite3.connect(DB_PATH)
+        con.execute("INSERT INTO contacts (name, phone, tags) VALUES (?, ?, ?)", (name, phone, tags))
+        con.commit()
+        row = con.execute("SELECT * FROM contacts WHERE phone=?", (phone,)).fetchone()
+        con.close()
+        return jsonify({"success": True, "id": row[0]})
+    except sqlite3.IntegrityError:
+        return jsonify({"error": "Phone number already exists"}), 409
+
+
+@app.route('/api/contacts/<int:contact_id>', methods=['DELETE'])
+def delete_contact(contact_id):
+    con = sqlite3.connect(DB_PATH)
+    con.execute("DELETE FROM contacts WHERE id=?", (contact_id,))
+    con.commit()
+    con.close()
+    return jsonify({"success": True})
+
+
+@app.route('/api/contacts/<int:contact_id>/tags', methods=['PUT'])
+def update_tags(contact_id):
+    data = request.json
+    tags = ','.join([t.strip().lower() for t in data.get('tags', []) if t.strip()])
+    con = sqlite3.connect(DB_PATH)
+    con.execute("UPDATE contacts SET tags=? WHERE id=?", (tags, contact_id))
     con.commit()
     con.close()
     return jsonify({"success": True})
