@@ -81,6 +81,10 @@ cd whatsapp
 npm install
 cd ..
 
+# Fix permissions — sudo may have changed ownership of files
+echo "Fixing permissions..."
+chown -R $(logname):$(logname) "$DIR"
+
 echo ""
 echo "======================================"
 echo "   Installation Complete!"
@@ -88,3 +92,4 @@ echo "======================================"
 echo ""
 echo "To start the app run:  ./start.sh"
 echo ""
+
