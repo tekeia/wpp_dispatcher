@@ -27,8 +27,15 @@ def init_log_db():
         message   TEXT NOT NULL,
         status    TEXT NOT NULL DEFAULT 'sent',
         source    TEXT NOT NULL DEFAULT 'manual',
-        sent_at   TEXT NOT NULL
+        sent_at   TEXT NOT NULL,
+        event_id  TEXT,
+        tags      TEXT
     )""")
+    # Migrate existing tables that may not have the new columns
+    try: con.execute('ALTER TABLE message_log ADD COLUMN event_id TEXT')
+    except: pass
+    try: con.execute('ALTER TABLE message_log ADD COLUMN tags TEXT')
+    except: pass
     con.execute("""CREATE TABLE IF NOT EXISTS contacts (
         id        INTEGER PRIMARY KEY AUTOINCREMENT,
         name      TEXT NOT NULL,
@@ -47,11 +54,11 @@ def init_log_db():
     con.commit()
     con.close()
 
-def log_message(phone, message, status='sent', source='manual'):
+def log_message(phone, message, status='sent', source='manual', event_id=None, tags=None):
     con = sqlite3.connect(DB_PATH)
     con.execute(
-        "INSERT INTO message_log (phone, message, status, source, sent_at) VALUES (?, ?, ?, ?, ?)",
-        (phone, message, status, source, datetime.now(pytz.utc).strftime('%Y-%m-%d %H:%M:%S'))
+        "INSERT INTO message_log (phone, message, status, source, sent_at, event_id, tags) VALUES (?, ?, ?, ?, ?, ?, ?)",
+        (phone, message, status, source, datetime.now(pytz.utc).strftime('%Y-%m-%d %H:%M:%S'), event_id, tags)
     )
     con.commit()
     con.close()
@@ -60,7 +67,7 @@ init_log_db()
 
 
 # ── WHATSAPP SEND ────────────────────────────────────────────
-def send_whatsapp_message(phone, message, source='scheduled'):
+def send_whatsapp_message(phone, message, source='scheduled', event_id=None, tags=None):
     try:
         res = requests.post(f"{WHATSAPP_BRIDGE}/send", json={"phone": phone, "message": message})
         data = res.json()
@@ -69,7 +76,7 @@ def send_whatsapp_message(phone, message, source='scheduled'):
     except Exception as e:
         status = 'failed'
         print(f"Error sending message to {phone}: {e}")
-    log_message(phone, message, status=status, source=source)
+    log_message(phone, message, status=status, source=source, event_id=event_id, tags=tags)
 
 
 @app.route('/')
@@ -102,11 +109,13 @@ def send_bulk():
     data = request.json
     phones = data.get('phones', [])
     message = data.get('message')
+    tags = ','.join(data.get('tags', [])) if data.get('tags') else None
     if not phones or not message:
         return jsonify({"error": "phones and message required"}), 400
+    event_id = str(uuid.uuid4())[:8].upper()  # short readable event ID
     for phone in phones:
-        send_whatsapp_message(phone, message, source='broadcast')
-    return jsonify({"success": True, "sent": len(phones)})
+        send_whatsapp_message(phone, message, source='broadcast', event_id=event_id, tags=tags)
+    return jsonify({"success": True, "sent": len(phones), "event_id": event_id})
 
 
 @app.route('/api/schedule', methods=['POST'])
