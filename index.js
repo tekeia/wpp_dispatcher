@@ -1,74 +1,1944 @@
-const { Client, LocalAuth } = require('whatsapp-web.js');
-const qrcode = require('qrcode-terminal');
-const express = require('express');
-const bodyParser = require('body-parser');
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8"/>
+  <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+  <title>WPP Dispatcher</title>
+  <link href="https://fonts.googleapis.com/css2?family=Space+Mono:wght@400;700&family=DM+Sans:wght@300;400;500;600&display=swap" rel="stylesheet"/>
+  <style>
+    :root { --bg:#0d0d0d;--surface:#161616;--surface2:#1f1f1f;--border:#2a2a2a;--green:#25d366;--text:#e8e8e8;--muted:#666;--danger:#e05555; }
+    *{box-sizing:border-box;margin:0;padding:0;}
+    body{background:var(--bg);color:var(--text);font-family:'DM Sans',sans-serif;min-height:100vh;}
+    header{border-bottom:1px solid var(--border);padding:16px 40px;display:flex;align-items:center;justify-content:space-between;}
+    .logo{font-family:'Space Mono',monospace;font-size:1.1rem;color:var(--green);letter-spacing:2px;text-transform:uppercase;}
+    .status-badge{display:flex;align-items:center;gap:8px;font-size:0.8rem;color:var(--muted);font-family:'Space Mono',monospace;}
+    .dot{width:8px;height:8px;border-radius:50%;background:var(--danger);transition:background 0.4s;}
+    .dot.online{background:var(--green);box-shadow:0 0 8px var(--green);}
+    .tabs{display:flex;align-items:center;border-bottom:1px solid var(--border);padding:0 40px;}.tabs-spacer{flex:1;}.gear-btn{background:none;border:none;cursor:pointer;color:var(--muted);font-size:1.15rem;padding:10px 8px;border-radius:6px;transition:all 0.2s;line-height:1;}.gear-btn:hover{color:var(--text);background:var(--surface2);}.gear-btn.active{color:var(--green);}
+    .tab{font-family:'Space Mono',monospace;font-size:0.75rem;letter-spacing:2px;text-transform:uppercase;padding:14px 20px;cursor:pointer;color:var(--muted);border-bottom:2px solid transparent;transition:all 0.2s;}
+    .tab:hover{color:var(--text);}
+    .tab.active{color:var(--green);border-bottom-color:var(--green);}
+    .panel{display:none;}.panel.active{display:block;}
+    .container{max-width:1000px;margin:0 auto;padding:32px 24px;}
+    .qr-banner{background:var(--surface);border:1px solid var(--border);border-left:3px solid var(--green);border-radius:8px;padding:16px 20px;margin-bottom:28px;display:none;align-items:center;gap:16px;}
+    .qr-banner.visible{display:flex;}
+    .qr-icon{font-size:1.8rem;}
+    .qr-text h3{font-size:0.9rem;margin-bottom:2px;}
+    .qr-text p{font-size:0.78rem;color:var(--muted);}
+    .qr-btn{margin-left:auto;background:var(--green);color:#000;border:none;padding:8px 18px;border-radius:6px;font-family:'Space Mono',monospace;font-size:0.75rem;cursor:pointer;font-weight:700;}
+    .card{background:var(--surface);border:1px solid var(--border);border-radius:12px;padding:24px;}
+    .card h2{font-family:'Space Mono',monospace;font-size:0.7rem;letter-spacing:2px;text-transform:uppercase;color:var(--green);margin-bottom:18px;}
+    label{display:block;font-size:0.75rem;color:var(--muted);margin-bottom:5px;margin-top:12px;text-transform:uppercase;letter-spacing:1px;}
+    input,textarea,select{width:100%;background:var(--surface2);border:1px solid var(--border);border-radius:8px;color:var(--text);padding:10px 14px;font-family:'DM Sans',sans-serif;font-size:0.9rem;outline:none;transition:border-color 0.2s;}
+    input:focus,textarea:focus,select:focus{border-color:var(--green);}
+    textarea{resize:vertical;min-height:80px;}
+    select option{background:var(--surface2);}
+    .btn{width:100%;margin-top:16px;padding:11px;border:none;border-radius:8px;font-family:'Space Mono',monospace;font-size:0.78rem;font-weight:700;cursor:pointer;letter-spacing:1px;transition:opacity 0.2s;}
+    .btn:hover{opacity:0.85;}
+    .btn-green{background:var(--green);color:#000;}
+    .btn-outline{background:transparent;border:1px solid var(--green);color:var(--green);}
+    .btn-sm{width:auto;margin-top:0;padding:7px 14px;font-size:0.7rem;}
+    .btn-danger{background:transparent;border:1px solid var(--border);color:var(--danger);}
+    .quick-grid{display:grid;grid-template-columns:1fr 1fr;gap:20px;}
+    @media(max-width:640px){.quick-grid{grid-template-columns:1fr;}}
+    .empty{color:var(--muted);font-size:0.85rem;text-align:center;padding:20px;}
 
-const app = express();
-app.use(bodyParser.json());
 
-let isReady = false;
-let qrData = null;
+    .tag{display:inline-block;background:var(--surface2);border:1px solid var(--border);color:var(--green);font-family:'Space Mono',monospace;font-size:0.65rem;padding:3px 8px;border-radius:20px;margin:2px;}
+    .tag-pill{display:inline-flex;align-items:center;gap:5px;font-family:'Space Mono',monospace;font-size:0.65rem;font-weight:700;padding:4px 10px;border-radius:20px;margin:2px;letter-spacing:0.5px;animation:popIn 0.15s ease;}
+    .tag-pill-x{cursor:pointer;opacity:0.7;font-size:0.7rem;line-height:1;background:none;border:none;color:inherit;padding:0;}
+    .tag-pill-x:hover{opacity:1;}
+    @keyframes popIn{from{transform:scale(0.7);opacity:0;}to{transform:scale(1);opacity:1;}}
+    .tag-filter{display:flex;flex-wrap:wrap;gap:6px;margin-bottom:16px;}
+    .tag-filter-btn{background:var(--surface2);border:1px solid var(--border);color:var(--muted);font-family:'Space Mono',monospace;font-size:0.65rem;padding:4px 10px;border-radius:20px;cursor:pointer;transition:all 0.2s;}
+    .tag-filter-btn:hover,.tag-filter-btn.active{background:var(--green);color:#000;border-color:var(--green);}
 
-const client = new Client({
-    authStrategy: new LocalAuth(),
-    puppeteer: {
-        headless: true,
-        executablePath: '/usr/bin/google-chrome-stable',
-        args: [
-            '--no-sandbox',
-            '--disable-setuid-sandbox',
-            '--disable-dev-shm-usage',
-            '--disable-accelerated-2d-canvas',
-            '--no-first-run',
-            '--no-zygote',
-            '--disable-gpu',
-            '--disable-extensions',
-            '--disable-software-rasterizer',
-            '--mute-audio'
-        ]
+    /* CONTACTS PAGE */
+    .contacts-grid{display:grid;grid-template-columns:1fr 340px;gap:20px;}
+    @media(max-width:768px){.contacts-grid{grid-template-columns:1fr;}}
+    .contact-table{width:100%;border-collapse:collapse;}
+    .contact-table th{font-family:'Space Mono',monospace;font-size:0.65rem;letter-spacing:1px;text-transform:uppercase;color:var(--muted);padding:8px 12px;text-align:left;border-bottom:1px solid var(--border);}
+    .contact-table td{padding:10px 12px;font-size:0.88rem;border-bottom:1px solid var(--border);}
+    .contact-table tr:last-child td{border-bottom:none;}
+    .contact-table tr:hover td{background:var(--surface2);}
+    .contact-phone-cell{font-family:'Space Mono',monospace;font-size:0.78rem;color:var(--muted);}
+
+    /* BROADCAST */
+    .broadcast-box{background:var(--surface2);border:1px solid var(--border);border-radius:8px;padding:16px;margin-top:16px;}
+    .broadcast-box h3{font-family:'Space Mono',monospace;font-size:0.7rem;letter-spacing:1px;text-transform:uppercase;color:var(--green);margin-bottom:10px;}
+    .selected-tag-info{font-size:0.8rem;color:var(--muted);margin-bottom:10px;}
+
+    /* QUICK TIME BUTTONS */
+    .quick-time-btn{flex:1;min-width:60px;background:var(--surface2);border:1px solid var(--border);color:var(--muted);font-family:'Space Mono',monospace;font-size:0.62rem;padding:6px 4px;border-radius:6px;cursor:pointer;text-align:center;transition:all 0.2s;font-weight:700;letter-spacing:0.5px;}
+    .quick-time-btn:hover{border-color:var(--green);color:var(--text);}
+    .quick-time-btn.active{background:var(--green);color:#000;border-color:var(--green);}
+
+
+    .qt-urgent{border-color:#3d1a1a;color:#e05555;}
+    .qt-urgent:hover{border-color:#e05555;background:#3d1a1a;}
+    .qt-urgent.active{background:#e05555 !important;color:#fff !important;border-color:#e05555 !important;}
+
+    /* REPEAT OPTIONS */
+    .repeat-options{display:grid;grid-template-columns:repeat(4,1fr);gap:6px;margin-top:8px;}
+    .repeat-btn{background:var(--surface2);border:1px solid var(--border);color:var(--muted);font-family:'Space Mono',monospace;font-size:0.62rem;padding:7px 4px;border-radius:6px;cursor:pointer;text-align:center;transition:all 0.2s;width:100%;margin-top:0;}
+    .repeat-btn.active{background:var(--green);color:#000;border-color:var(--green);}
+
+    /* MINI CALENDAR */
+    .mini-cal{font-family:'Space Mono',monospace;}
+    .mini-cal-header{display:flex;align-items:center;justify-content:space-between;margin-bottom:12px;}
+    .mini-cal-header span{font-size:0.8rem;color:var(--green);}
+    .mini-cal-nav{background:none;border:1px solid var(--border);color:var(--text);padding:4px 10px;border-radius:4px;cursor:pointer;font-size:0.75rem;}
+    .mini-cal-grid{display:grid;grid-template-columns:repeat(7,1fr);gap:2px;}
+    .cal-day-label{font-size:0.6rem;color:var(--muted);text-align:center;padding:4px 0;}
+    .cal-day{font-size:0.72rem;text-align:center;padding:5px 2px;border-radius:4px;cursor:pointer;position:relative;transition:background 0.15s;}
+    .cal-day:hover{background:var(--surface2);}
+    .cal-day.today{background:var(--surface2);color:var(--green);font-weight:700;}
+    .cal-day.has-event::after{content:'';display:block;width:4px;height:4px;background:var(--green);border-radius:50%;margin:2px auto 0;}
+    .cal-day.empty-day{cursor:default;}
+
+    /* FULL CALENDAR */
+    .cal-layout{display:grid;grid-template-columns:1fr 360px;gap:20px;}
+    @media(max-width:768px){.cal-layout{grid-template-columns:1fr;}}
+    .full-cal{background:var(--surface);border:1px solid var(--border);border-radius:12px;padding:24px;}
+    .full-cal-header{display:flex;align-items:center;justify-content:space-between;margin-bottom:20px;}
+    .full-cal-title{font-family:'Space Mono',monospace;font-size:0.9rem;color:var(--green);}
+    .full-cal-nav{background:none;border:1px solid var(--border);color:var(--text);padding:6px 14px;border-radius:6px;cursor:pointer;font-family:'Space Mono',monospace;font-size:0.75rem;transition:border-color 0.2s;}
+    .full-cal-nav:hover{border-color:var(--green);}
+    .full-cal-grid{display:grid;grid-template-columns:repeat(7,1fr);gap:4px;}
+    .full-day-label{font-family:'Space Mono',monospace;font-size:0.65rem;color:var(--muted);text-align:center;padding:6px 0;}
+    .full-day{min-height:72px;background:var(--surface2);border-radius:6px;padding:6px;cursor:pointer;transition:border 0.15s;border:1px solid transparent;}
+    .full-day:hover{border-color:var(--border);}
+    .full-day.today{border-color:var(--green);}
+    .full-day.selected{border-color:var(--green);background:#1a2e1f;}
+    .full-day.empty-day{background:transparent;cursor:default;}
+    .full-day-num{font-family:'Space Mono',monospace;font-size:0.7rem;color:var(--muted);margin-bottom:4px;}
+    .full-day.today .full-day-num{color:var(--green);font-weight:700;}
+    .day-event{background:var(--green);color:#000;font-size:0.6rem;padding:2px 5px;border-radius:3px;margin-bottom:2px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;}
+    .day-event.recurring{background:#1a9e4a;}
+    .schedule-sidebar{display:flex;flex-direction:column;gap:16px;}
+    .selected-date-label{font-family:'Space Mono',monospace;font-size:0.7rem;color:var(--green);margin-bottom:4px;}
+    .job-item{background:var(--surface2);border-radius:8px;padding:12px 16px;margin-bottom:8px;display:flex;align-items:center;justify-content:space-between;gap:10px;}
+    .job-info{flex:1;min-width:0;}
+    .job-phone{font-family:'Space Mono',monospace;font-size:0.78rem;color:var(--green);}
+    .job-msg{font-size:0.82rem;margin:3px 0;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;}
+    .job-time{font-size:0.72rem;color:var(--muted);}
+    .job-repeat{font-size:0.65rem;font-family:'Space Mono',monospace;color:var(--green);background:var(--surface);padding:2px 6px;border-radius:10px;display:inline-block;margin-top:2px;}
+    .delete-btn{background:transparent;border:1px solid var(--border);color:var(--danger);padding:5px 10px;border-radius:5px;font-size:0.7rem;cursor:pointer;font-family:'Space Mono',monospace;white-space:nowrap;}
+    .delete-btn:hover{border-color:var(--danger);}
+    .section-title{font-family:'Space Mono',monospace;font-size:0.7rem;letter-spacing:2px;text-transform:uppercase;color:var(--green);margin-bottom:12px;}
+
+    /* LIGHT MODE */
+    body.light { --bg:#f5f5f5; --surface:#ffffff; --surface2:#eeeeee; --border:#d0d0d0; --text:#1a1a1a; --muted:#888; }
+    body.light .full-day { background: #f0f0f0; }
+    body.light .full-day.today { border-color: var(--green); }
+    body.light .job-item, body.light .log-item { background: #e8e8e8; }
+    body.light header, body.light .tabs { background: #fff; }
+    body.light .card { background: #fff; border-color: #ddd; }
+
+    /* SCHED BOX DIMMED STATE */
+    @keyframes subtlePulse { 0%,100%{opacity:0.45} 50%{opacity:0.6} }
+    #sched-recipient-box.tag-active { animation: subtlePulse 1.8s ease-in-out 3; }
+
+    /* CALENDAR EVENT SETTINGS ROWS */
+    .event-row{display:flex;align-items:center;gap:8px;padding:7px 10px;border-radius:7px;background:var(--surface2);margin-bottom:5px;transition:opacity 0.2s;}
+    .event-row.event-disabled{opacity:0.38;}
+    .event-emoji{font-size:1rem;flex-shrink:0;width:22px;text-align:center;}
+    .event-date{font-family:'Space Mono',monospace;font-size:0.68rem;color:var(--muted);flex-shrink:0;width:40px;}
+    .event-name{font-size:0.8rem;flex:1;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;}
+    .event-toggle-btn{background:none;border:1px solid var(--border);color:var(--muted);border-radius:5px;width:24px;height:24px;cursor:pointer;font-size:0.75rem;flex-shrink:0;display:flex;align-items:center;justify-content:center;transition:all 0.15s;}
+    .event-toggle-btn:hover{border-color:var(--green);color:var(--text);}
+    .event-delete-btn:hover{border-color:#e05555;color:#e05555;}
+
+    /* THEME BUTTONS */
+    .theme-btn { background: var(--surface2); border: 1px solid var(--border); color: var(--muted); font-family: 'Space Mono', monospace; font-size: 0.72rem; font-weight: 700; padding: 8px 16px; border-radius: 8px; cursor: pointer; transition: all 0.2s; }
+    .theme-btn:hover { border-color: var(--green); color: var(--text); }
+    .theme-btn.active { background: var(--green); color: #000; border-color: var(--green); }
+
+    /* HOLIDAYS */
+    .day-holiday{font-size:0.58rem;padding:2px 4px;border-radius:3px;margin-bottom:2px;background:rgba(255,214,0,0.12);color:#ffd600;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;display:flex;align-items:center;gap:2px;}
+    .day-holiday span{overflow:hidden;text-overflow:ellipsis;white-space:nowrap;}
+    .full-day.has-holiday{border-color:rgba(255,214,0,0.2);}
+    .cal-day.has-holiday::before{content:'';display:block;width:3px;height:3px;background:#ffd600;border-radius:50%;margin:0 auto 1px;opacity:0.8;}
+
+    /* LOG */
+    .log-item{display:grid;grid-template-columns:140px 1fr auto;align-items:start;gap:12px;padding:12px 16px;border-bottom:1px solid var(--border);transition:background 0.15s;}
+    .log-item:last-child{border-bottom:none;}
+    .log-item:hover{background:var(--surface2);}
+    .log-meta{display:flex;flex-direction:column;gap:3px;}
+    .log-phone{font-family:'Space Mono',monospace;font-size:0.78rem;color:var(--green);}
+    .log-time{font-size:0.7rem;color:var(--muted);}
+    .log-msg{font-size:0.85rem;line-height:1.4;word-break:break-word;}
+    .log-badges{display:flex;flex-direction:column;align-items:flex-end;gap:4px;}
+    .badge{font-family:'Space Mono',monospace;font-size:0.6rem;padding:3px 8px;border-radius:10px;font-weight:700;white-space:nowrap;}
+    .badge-sent{background:#1a3d28;color:#25d366;}
+    .badge-failed{background:#3d1a1a;color:#e05555;}
+    .badge-manual{background:#1f1f2e;color:#74c0fc;}
+    .badge-broadcast{background:#2e1f1f;color:#ffa94d;}
+    .badge-scheduled{background:#1f2e1f;color:#a9e34b;}
+    .badge-recurring{background:#2a1f2e;color:#cc5de8;}
+    .stat-chip{background:var(--surface2);border:1px solid var(--border);border-radius:8px;padding:10px 16px;font-family:'Space Mono',monospace;font-size:0.7rem;color:var(--muted);}
+    .stat-chip span{display:block;font-size:1.1rem;color:var(--text);font-weight:700;margin-bottom:2px;}
+
+    .toast{position:fixed;bottom:24px;right:24px;background:var(--surface2);border:1px solid var(--border);border-left:3px solid var(--green);padding:12px 20px;border-radius:8px;font-size:0.85rem;opacity:0;transform:translateY(10px);transition:all 0.3s;pointer-events:none;z-index:999;}
+    .toast.show{opacity:1;transform:translateY(0);}
+    .toast.error{border-left-color:var(--danger);}
+    .modal-overlay{display:none;position:fixed;inset:0;background:rgba(0,0,0,0.8);z-index:100;align-items:center;justify-content:center;}
+    .modal-overlay.visible{display:flex;}
+    .modal{background:var(--surface);border:1px solid var(--border);border-radius:16px;padding:32px;text-align:center;max-width:340px;width:90%;}
+    .modal h3{font-family:'Space Mono',monospace;color:var(--green);margin-bottom:8px;font-size:0.9rem;}
+    .modal p{color:var(--muted);font-size:0.82rem;margin-bottom:20px;}
+    #qr-container{background:white;padding:16px;border-radius:8px;display:inline-block;}
+    .modal-close{margin-top:20px;background:transparent;border:1px solid var(--border);color:var(--muted);padding:8px 20px;border-radius:6px;cursor:pointer;font-family:'Space Mono',monospace;font-size:0.75rem;}
+    footer{text-align:center;padding:24px;border-top:1px solid var(--border);margin-top:40px;font-size:0.78rem;color:var(--muted);}
+    footer a{color:var(--green);text-decoration:none;font-family:'Space Mono',monospace;}
+  </style>
+</head>
+<body>
+
+<header>
+  <div class="logo">WPP_Dispatcher</div>
+  <div class="status-badge">
+    <div class="dot" id="status-dot"></div>
+    <span id="status-text">Checking...</span>
+  </div>
+</header>
+
+<div class="tabs">
+  <div class="tab active" onclick="switchTab('calendar')">Dispatch</div>
+  <div class="tab" onclick="switchTab('contacts')">Contacts</div>
+  <div class="tab" onclick="switchTab('log')">Log</div>
+  <div class="tabs-spacer"></div>
+  <button class="gear-btn" id="gear-btn" onclick="switchTab('settings')" title="Settings">⚙️</button>
+</div>
+
+<!-- ===== QUICK MENU ===== -->
+<!-- =====================================================
+     QUICK SEND TAB
+     Send a message immediately to a contact or tag group.
+     Uses: sendNow(), setQSMode(), updateQSTagPreview()
+     ===================================================== -->
+<div class="panel" id="panel-quick">
+  <div class="container">
+    <div class="qr-banner" id="qr-banner">
+      <div class="qr-icon">📱</div>
+      <div class="qr-text">
+        <h3>WhatsApp not connected</h3>
+        <p>Scan the QR code to link your account</p>
+      </div>
+      <button class="qr-btn" onclick="showQR()">SCAN QR</button>
+    </div>
+    <div class="quick-grid">
+      <div class="card">
+        <h2>Quick Send</h2>
+        <label>Send To</label>
+        <div style="display:flex;gap:8px;margin-bottom:4px;">
+          <button class="repeat-btn active" id="qs-mode-contact" onclick="setQSMode('contact')" style="flex:1;">Contact</button>
+          <button class="repeat-btn" id="qs-mode-tag" onclick="setQSMode('tag')" style="flex:1;">Tag (Broadcast)</button>
+        </div>
+        <div id="qs-contact-fields">
+          <label>Select Contact</label>
+          <select id="send-contact" onchange="fillPhone('send-contact','send-phone')">
+            <option value="">-- Select a contact --</option>
+          </select>
+          <label>Or Enter Phone Manually</label>
+          <input type="text" id="send-phone" placeholder="(555) 000-0000"/>
+        </div>
+        <div id="qs-tag-fields" style="display:none;">
+          <label>Select Tag</label>
+          <select id="send-tag">
+            <option value="">-- Select a tag --</option>
+          </select>
+          <div id="qs-tag-preview" style="margin-top:8px;min-height:24px;"></div>
+        </div>
+        <label>Message</label>
+        <textarea id="send-msg" placeholder="Type your message..."></textarea>
+        <button class="btn btn-green" onclick="sendNow()">SEND MESSAGE</button>
+      </div>
+      <div class="card">
+        <h2>Upcoming — This Month</h2>
+        <div class="mini-cal">
+          <div class="mini-cal-header">
+            <button class="mini-cal-nav" onclick="miniCalPrev()">‹</button>
+            <span id="mini-cal-title"></span>
+            <button class="mini-cal-nav" onclick="miniCalNext()">›</button>
+          </div>
+          <div class="mini-cal-grid" id="mini-cal-grid"></div>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- ===== CALENDAR ===== -->
+<div class="panel active" id="panel-calendar">
+  <div class="container">
+    <div class="cal-layout">
+      <div class="full-cal">
+        <div class="full-cal-header">
+          <button class="full-cal-nav" onclick="fullCalPrev()">‹ Prev</button>
+          <div class="full-cal-title" id="full-cal-title"></div>
+          <button class="full-cal-nav" onclick="fullCalNext()">Next ›</button>
+        </div>
+        <div class="full-cal-grid" id="full-cal-grid"></div>
+        <div style="margin-top:20px;">
+          <div class="section-title">All Scheduled Messages</div>
+          <div id="all-jobs-list"><div class="empty">No scheduled messages</div></div>
+        </div>
+      </div>
+      <div class="schedule-sidebar">
+        <div class="card">
+          <h2>Schedule Message</h2>
+          <div class="selected-date-label" id="selected-date-label">No date selected</div>
+
+          <label>Send To</label>
+          <div id="sched-tag-pills" style="display:flex;flex-wrap:wrap;gap:4px;margin-bottom:8px;min-height:0;"></div>
+          <div id="sched-recipient-box" onclick="document.getElementById('sched-contact-search').focus()" style="background:var(--surface2);border:1px solid var(--border);border-radius:8px;padding:8px 12px;cursor:text;transition:border-color 0.2s;">
+            <div id="sched-contact-pills" style="display:flex;flex-wrap:wrap;gap:4px;margin-bottom:4px;min-height:0;"></div>
+            <input type="text" id="sched-contact-search"
+              placeholder="Search contact or type number..."
+              oninput="renderSchedResults()"
+              autocomplete="off"
+              style="background:transparent;border:none;outline:none;width:100%;color:var(--text);font-family:'DM Sans',sans-serif;font-size:0.88rem;padding:2px 0;"/>
+          </div>
+          <div id="sched-contact-results" style="max-height:150px;overflow-y:auto;margin-top:3px;border-radius:8px;"></div>
+          <div id="sched-recipient-preview" style="font-size:0.72rem;color:var(--muted);margin-top:4px;min-height:16px;"></div>
+
+          <label style="margin-top:16px;">Message</label>
+          <textarea id="sched-msg" placeholder="Type your message..."></textarea>
+
+          <label style="margin-top:16px;">Date & Time</label>
+          <input type="datetime-local" id="sched-time" oninput="clearQuickTime()"/>
+          <div style="display:flex;gap:5px;margin-top:6px;">
+            <button class="quick-time-btn" id="qt-today" onclick="setQuickTime('today')">Today</button>
+            <button class="quick-time-btn" id="qt-tomorrow" onclick="setQuickTime('tomorrow')">Tomorrow</button>
+            <button class="quick-time-btn qt-urgent" id="qt-15" onclick="setQuickTime('delay')">+15 min</button>
+          </div>
+
+          <label style="margin-top:16px;">Repeat</label>
+          <div class="repeat-options">
+            <button class="repeat-btn active" id="rep-none" onclick="setRepeat('none')">Once</button>
+            <button class="repeat-btn" id="rep-daily" onclick="setRepeat('daily')">Daily</button>
+            <button class="repeat-btn" id="rep-weekly" onclick="setRepeat('weekly')">Weekly</button>
+            <button class="repeat-btn" id="rep-yearly" onclick="setRepeat('yearly')">Yearly</button>
+          </div>
+
+          <div style="display:flex;gap:8px;margin-top:20px;align-items:stretch;">
+            <button class="btn btn-outline" style="margin:0;flex:1;" onclick="scheduleMsg()">SCHEDULE</button>
+            <button class="btn btn-green" style="margin:0;width:auto;padding:11px 18px;font-size:0.72rem;" onclick="sendNowFromCalendar()" title="Send immediately">SEND NOW</button>
+          </div>
+        </div>
+        <div class="card">
+          <h2 id="day-jobs-title">Selected Day</h2>
+          <div id="day-jobs-list"><div class="empty">Click a day to see messages</div></div>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- ===== CONTACTS ===== -->
+<div class="panel" id="panel-contacts">
+  <div class="container">
+    <div class="contacts-grid">
+      <div class="card">
+        <h2>All Contacts</h2>
+        <!-- TAG FILTERS -->
+        <div id="tag-filters" class="tag-filter" style="margin-bottom:12px;"></div>
+        <input type="text" id="contact-search" placeholder="Search contacts..." oninput="renderContactTable()" style="margin-bottom:16px;"/>
+        <div id="contact-table-wrap"><div class="empty">No contacts saved</div></div>
+
+        <!-- BROADCAST BY TAG -->
+        <div class="broadcast-box" id="broadcast-box" style="display:none;">
+          <h3>📢 Broadcast to Tag</h3>
+          <div class="selected-tag-info" id="broadcast-tag-info"></div>
+          <textarea id="broadcast-msg" placeholder="Type your message..." style="min-height:70px;"></textarea>
+          <button class="btn btn-green" style="margin-top:10px;" onclick="broadcastToTag()">SEND TO ALL IN TAG</button>
+        </div>
+      </div>
+
+      <div class="card" style="align-self:start;">
+        <h2>Add Contact</h2>
+        <label>Name</label>
+        <input type="text" id="new-name" placeholder="John Doe"/>
+        <label>Phone Number</label>
+        <input type="text" id="new-phone" placeholder="(555) 000-0000"/>
+        <label>Tags</label>
+        <div class="tag-input-wrap" id="tag-input-wrap" onclick="document.getElementById('tag-typing').focus()">
+          <div id="tag-pills-preview"></div>
+          <input type="text" id="tag-typing" placeholder="type tag, press comma..." autocomplete="off"/>
+        </div>
+        <input type="hidden" id="new-tags"/>
+        <p style="font-size:0.72rem;color:var(--muted);margin-top:6px;">Type a tag and press comma or Enter to add it.</p>
+        <button class="btn btn-green" onclick="addContact()">ADD CONTACT</button>
+      </div>
+    </div>
+  </div>
+</div>
+
+
+<!-- ===== LOG ===== -->
+<div class="panel" id="panel-log">
+  <div class="container">
+    <div class="card">
+      <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:18px;flex-wrap:gap;">
+        <h2 style="margin-bottom:0;">Message Log</h2>
+        <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap;">
+          <input type="text" id="log-search" placeholder="Search phone or message..." style="width:220px;margin:0;" oninput="loadLogs()"/>
+          <select id="log-source-filter" style="width:140px;margin:0;" onchange="loadLogs()">
+            <option value="">All Sources</option>
+            <option value="manual">Manual</option>
+            <option value="broadcast">Broadcast</option>
+            <option value="scheduled">Scheduled</option>
+            <option value="recurring:daily">Recurring Daily</option>
+            <option value="recurring:weekly">Recurring Weekly</option>
+            <option value="recurring:yearly">Recurring Yearly</option>
+          </select>
+          <button class="btn btn-danger btn-sm" onclick="clearLogs()" style="margin:0;">CLEAR ALL</button>
+        </div>
+      </div>
+      <div id="log-stats" style="display:flex;gap:16px;margin-bottom:16px;flex-wrap:wrap;"></div>
+      <div id="log-list"><div class="empty">No messages logged yet</div></div>
+      <div id="log-pagination" style="display:flex;gap:8px;justify-content:center;margin-top:16px;"></div>
+    </div>
+  </div>
+</div>
+
+
+<!-- ===== SETTINGS ===== -->
+<div class="panel" id="panel-settings">
+  <div class="container" style="max-width:600px;">
+    <div class="card" style="margin-bottom:20px;">
+      <h2>Appearance</h2>
+      <div style="display:flex;align-items:center;justify-content:space-between;padding:12px 0;border-bottom:1px solid var(--border);">
+        <div>
+          <div style="font-size:0.9rem;font-weight:500;">Theme</div>
+          <div style="font-size:0.75rem;color:var(--muted);margin-top:2px;">Switch between dark and light mode</div>
+        </div>
+        <div style="display:flex;gap:8px;">
+          <button class="theme-btn active" id="theme-dark" onclick="setTheme('dark')">🌙 Dark</button>
+          <button class="theme-btn" id="theme-light" onclick="setTheme('light')">☀️ Light</button>
+        </div>
+      </div>
+    </div>
+
+    <div class="card" style="margin-bottom:20px;">
+      <h2>WhatsApp Connection</h2>
+      <div style="display:flex;align-items:center;justify-content:space-between;padding:12px 0;">
+        <div>
+          <div style="font-size:0.9rem;font-weight:500;">Status</div>
+          <div id="settings-status-text" style="font-size:0.75rem;color:var(--muted);margin-top:2px;">Checking...</div>
+        </div>
+        <div style="display:flex;gap:8px;">
+          <button class="btn btn-outline btn-sm" onclick="showQR()">Scan QR</button>
+        </div>
+      </div>
+    </div>
+
+    <div class="card" style="margin-bottom:20px;">
+      <h2>Quick Delay Button</h2>
+      <div style="font-size:0.75rem;color:var(--muted);margin-bottom:14px;">Set how many minutes the "+X min" shortcut adds when scheduling a message.</div>
+      <div style="display:flex;align-items:center;gap:10px;">
+        <input type="number" id="settings-delay-input" min="1" max="1440" placeholder="15"
+          style="width:90px;text-align:center;font-size:1rem;font-family:'Space Mono',monospace;"
+          onkeydown="if(event.key==='Enter') saveQuickDelay()"/>
+        <span style="font-size:0.85rem;color:var(--muted);">minutes</span>
+        <button class="btn btn-green" style="margin:0;padding:9px 18px;" onclick="saveQuickDelay()">SAVE</button>
+      </div>
+      <div id="delay-saved-note" style="font-size:0.72rem;color:var(--green);margin-top:8px;min-height:16px;"></div>
+    </div>
+
+    <div class="card" style="margin-bottom:20px;">
+      <h2>Calendar Events</h2>
+      <div style="font-size:0.75rem;color:var(--muted);margin-bottom:14px;">Manage what appears on your Dispatch calendar. Toggle built-in holidays or add your own custom events.</div>
+
+      <!-- Add Custom Event -->
+      <div style="background:var(--surface2);border:1px solid var(--border);border-radius:10px;padding:14px;margin-bottom:16px;">
+        <div style="font-size:0.78rem;font-weight:700;letter-spacing:0.08em;color:var(--muted);margin-bottom:10px;">ADD CUSTOM EVENT</div>
+        <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-bottom:8px;">
+          <div>
+            <label style="font-size:0.7rem;margin-bottom:4px;">Month</label>
+            <select id="ce-month" style="width:100%;padding:7px 10px;font-size:0.82rem;">
+              <option value="1">January</option><option value="2">February</option>
+              <option value="3">March</option><option value="4">April</option>
+              <option value="5">May</option><option value="6">June</option>
+              <option value="7">July</option><option value="8">August</option>
+              <option value="9">September</option><option value="10">October</option>
+              <option value="11">November</option><option value="12">December</option>
+            </select>
+          </div>
+          <div>
+            <label style="font-size:0.7rem;margin-bottom:4px;">Day</label>
+            <input type="number" id="ce-day" min="1" max="31" placeholder="e.g. 15" style="width:100%;"/>
+          </div>
+        </div>
+        <div style="display:grid;grid-template-columns:2fr 1fr;gap:8px;margin-bottom:10px;">
+          <div>
+            <label style="font-size:0.7rem;margin-bottom:4px;">Event Name</label>
+            <input type="text" id="ce-name" placeholder="e.g. Company Anniversary"/>
+          </div>
+          <div style="position:relative;">
+            <label style="font-size:0.7rem;margin-bottom:4px;">Emoji</label>
+            <input type="text" id="ce-emoji" placeholder="🎉" maxlength="4"
+              style="text-align:center;font-size:1.1rem;cursor:pointer;"
+              onclick="toggleEmojiPicker()" readonly/>
+            <div id="emoji-picker" style="display:none;position:absolute;bottom:calc(100% + 6px);right:0;z-index:200;
+              background:var(--surface);border:1px solid var(--border);border-radius:12px;
+              padding:10px;width:240px;box-shadow:0 8px 32px rgba(0,0,0,0.4);">
+              <div style="display:flex;flex-wrap:wrap;gap:4px;max-height:180px;overflow-y:auto;" id="emoji-grid"></div>
+            </div>
+          </div>
+        </div>
+        <button class="btn btn-green" style="margin:0;width:100%;padding:9px;" onclick="addCustomEvent()">ADD TO CALENDAR</button>
+      </div>
+
+      <!-- Built-in Holidays List -->
+      <div style="font-size:0.78rem;font-weight:700;letter-spacing:0.08em;color:var(--muted);margin-bottom:8px;">BUILT-IN HOLIDAYS</div>
+      <div id="settings-holidays-list"></div>
+
+      <!-- Custom Events List -->
+      <div id="settings-custom-events-wrap" style="display:none;">
+        <div style="font-size:0.78rem;font-weight:700;letter-spacing:0.08em;color:var(--muted);margin:14px 0 8px;">YOUR CUSTOM EVENTS</div>
+        <div id="settings-custom-events-list"></div>
+      </div>
+    </div>
+
+    <div class="card" style="margin-bottom:20px;">
+      <h2>Country of Origin</h2>
+      <div style="font-size:0.75rem;color:var(--muted);margin-bottom:14px;">Phone numbers added without a country code will automatically get this country's code prepended.</div>
+      <div style="display:flex;align-items:center;gap:10px;">
+        <select id="settings-country" style="flex:1;min-width:200px;padding:9px 12px;font-size:0.85rem;">
+          <option value="">— Select country —</option>
+          <option value="+1">🇺🇸 United States (+1)</option>
+          <option value="+1">🇨🇦 Canada (+1)</option>
+          <option value="+55">🇧🇷 Brazil (+55)</option>
+          <option value="+52">🇲🇽 Mexico (+52)</option>
+          <option value="+44">🇬🇧 United Kingdom (+44)</option>
+          <option value="+34">🇪🇸 Spain (+34)</option>
+          <option value="+351">🇵🇹 Portugal (+351)</option>
+          <option value="+33">🇫🇷 France (+33)</option>
+          <option value="+49">🇩🇪 Germany (+49)</option>
+          <option value="+39">🇮🇹 Italy (+39)</option>
+          <option value="+31">🇳🇱 Netherlands (+31)</option>
+          <option value="+46">🇸🇪 Sweden (+46)</option>
+          <option value="+47">🇳🇴 Norway (+47)</option>
+          <option value="+45">🇩🇰 Denmark (+45)</option>
+          <option value="+358">🇫🇮 Finland (+358)</option>
+          <option value="+54">🇦🇷 Argentina (+54)</option>
+          <option value="+56">🇨🇱 Chile (+56)</option>
+          <option value="+57">🇨🇴 Colombia (+57)</option>
+          <option value="+58">🇻🇪 Venezuela (+58)</option>
+          <option value="+51">🇵🇪 Peru (+51)</option>
+          <option value="+593">🇪🇨 Ecuador (+593)</option>
+          <option value="+598">🇺🇾 Uruguay (+598)</option>
+          <option value="+595">🇵🇾 Paraguay (+595)</option>
+          <option value="+591">🇧🇴 Bolivia (+591)</option>
+          <option value="+507">🇵🇦 Panama (+507)</option>
+          <option value="+506">🇨🇷 Costa Rica (+506)</option>
+          <option value="+502">🇬🇹 Guatemala (+502)</option>
+          <option value="+503">🇸🇻 El Salvador (+503)</option>
+          <option value="+504">🇭🇳 Honduras (+504)</option>
+          <option value="+505">🇳🇮 Nicaragua (+505)</option>
+          <option value="+53">🇨🇺 Cuba (+53)</option>
+          <option value="+1">🇵🇷 Puerto Rico (+1)</option>
+          <option value="+1">🇩🇴 Dominican Republic (+1)</option>
+          <option value="+7">🇷🇺 Russia (+7)</option>
+          <option value="+380">🇺🇦 Ukraine (+380)</option>
+          <option value="+48">🇵🇱 Poland (+48)</option>
+          <option value="+420">🇨🇿 Czech Republic (+420)</option>
+          <option value="+36">🇭🇺 Hungary (+36)</option>
+          <option value="+40">🇷🇴 Romania (+40)</option>
+          <option value="+30">🇬🇷 Greece (+30)</option>
+          <option value="+90">🇹🇷 Turkey (+90)</option>
+          <option value="+972">🇮🇱 Israel (+972)</option>
+          <option value="+971">🇦🇪 UAE (+971)</option>
+          <option value="+966">🇸🇦 Saudi Arabia (+966)</option>
+          <option value="+20">🇪🇬 Egypt (+20)</option>
+          <option value="+27">🇿🇦 South Africa (+27)</option>
+          <option value="+234">🇳🇬 Nigeria (+234)</option>
+          <option value="+254">🇰🇪 Kenya (+254)</option>
+          <option value="+91">🇮🇳 India (+91)</option>
+          <option value="+92">🇵🇰 Pakistan (+92)</option>
+          <option value="+880">🇧🇩 Bangladesh (+880)</option>
+          <option value="+86">🇨🇳 China (+86)</option>
+          <option value="+81">🇯🇵 Japan (+81)</option>
+          <option value="+82">🇰🇷 South Korea (+82)</option>
+          <option value="+63">🇵🇭 Philippines (+63)</option>
+          <option value="+62">🇮🇩 Indonesia (+62)</option>
+          <option value="+84">🇻🇳 Vietnam (+84)</option>
+          <option value="+66">🇹🇭 Thailand (+66)</option>
+          <option value="+60">🇲🇾 Malaysia (+60)</option>
+          <option value="+65">🇸🇬 Singapore (+65)</option>
+          <option value="+61">🇦🇺 Australia (+61)</option>
+          <option value="+64">🇳🇿 New Zealand (+64)</option>
+        </select>
+        <button class="btn btn-green" style="margin:0;padding:9px 18px;flex-shrink:0;width:auto;" onclick="saveCountry()">SAVE</button>
+      </div>
+      <div id="country-saved-note" style="font-size:0.72rem;color:var(--green);margin-top:8px;min-height:16px;"></div>
+    </div>
+
+    <div class="card">
+      <h2>About</h2>
+      <div style="font-size:0.85rem;color:var(--muted);line-height:1.8;">
+        <div style="display:flex;justify-content:space-between;padding:6px 0;border-bottom:1px solid var(--border);">
+          <span>App</span><span style="color:var(--text);font-family:'Space Mono',monospace;font-size:0.78rem;">WPP Dispatcher</span>
+        </div>
+        <div style="display:flex;justify-content:space-between;padding:6px 0;">
+          <span>Stack</span><span style="color:var(--text);font-family:'Space Mono',monospace;font-size:0.78rem;">Flask · APScheduler · whatsapp-web.js</span>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- Edit Job Modal -->
+<div class="modal-overlay" id="edit-modal">
+  <div class="modal" style="max-width:420px;text-align:left;">
+    <h3 style="margin-bottom:16px;">Edit Scheduled Message</h3>
+    <input type="hidden" id="edit-job-id"/>
+    <label>Phone</label>
+    <input type="text" id="edit-phone" placeholder="Phone number"/>
+    <label>Message</label>
+    <textarea id="edit-msg" style="min-height:80px;"></textarea>
+    <label>Date & Time</label>
+    <input type="datetime-local" id="edit-time"/>
+    <label>Repeat</label>
+    <div class="repeat-options" style="margin-top:6px;">
+      <button class="repeat-btn active" id="edit-rep-none" onclick="setEditRepeat('none')">Once</button>
+      <button class="repeat-btn" id="edit-rep-daily" onclick="setEditRepeat('daily')">Daily</button>
+      <button class="repeat-btn" id="edit-rep-weekly" onclick="setEditRepeat('weekly')">Weekly</button>
+      <button class="repeat-btn" id="edit-rep-yearly" onclick="setEditRepeat('yearly')">Yearly</button>
+    </div>
+    <div style="display:flex;gap:8px;margin-top:20px;">
+      <button class="btn btn-green" style="margin:0;flex:1;" onclick="saveEditJob()">SAVE CHANGES</button>
+      <button class="modal-close" style="margin:0;" onclick="closeEditModal()">CANCEL</button>
+    </div>
+  </div>
+</div>
+
+<!-- QR Modal -->
+<div class="modal-overlay" id="qr-modal">
+  <div class="modal">
+    <h3>Scan with WhatsApp</h3>
+    <p>Open WhatsApp → Linked Devices → Link a Device</p>
+    <div id="qr-container"><p style="color:#000;font-size:0.8rem">Loading QR...</p></div>
+    <button class="modal-close" onclick="closeQR()">CLOSE</button>
+  </div>
+</div>
+
+
+
+<div class="toast" id="toast"></div>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/qrcodejs/1.0.0/qrcode.min.js"></script>
+<script>
+  // ─── COUNTRY OF ORIGIN ───────────────────────────────────
+  let originCountryCode = localStorage.getItem('wpp_country_code') || '';
+
+  function saveCountry() {
+    const val = document.getElementById('settings-country').value;
+    originCountryCode = val;
+    localStorage.setItem('wpp_country_code', val);
+    const note = document.getElementById('country-saved-note');
+    note.textContent = val ? `✓ Country code ${val} will be applied to new numbers` : '✓ No auto-prefix set';
+    setTimeout(() => { note.textContent = ''; }, 3000);
+  }
+
+  function loadCountrySetting() {
+    const sel = document.getElementById('settings-country');
+    if (!sel) return;
+    // Match by value — find first option with this value
+    [...sel.options].forEach(o => {
+      if (o.value === originCountryCode) sel.value = originCountryCode;
+    });
+  }
+
+  // Normalize a phone number: if it has no country code and we have one set, prepend it
+  function normalizePhone(raw) {
+    if (!raw) return raw;
+    const stripped = raw.replace(/[\s\-().]/g, '');
+    // Already has a + prefix — leave it alone
+    if (stripped.startsWith('+')) return stripped;
+    // Has leading country code digits but no + (e.g. "17865001234") — add +
+    if (originCountryCode && stripped.length > 10) return '+' + stripped;
+    // 10-digit or shorter — prepend country code
+    if (originCountryCode) return originCountryCode + stripped;
+    return raw; // no country set, return as-is
+  }
+
+  // ─── PHONE FORMATTING ────────────────────────────────────
+  function formatPhone(raw) {
+    // Strip everything except digits and leading +
+    const hasPlus = raw.startsWith('+');
+    const digits = raw.replace(/\D/g, '');
+    // US format: 10 digits → (XXX) XXX-XXXX
+    // 11 digits starting with 1 → +1 (XXX) XXX-XXXX
+    if (digits.length === 11 && digits.startsWith('1')) {
+      const d = digits.slice(1);
+      return `+1 (${d.slice(0,3)}) ${d.slice(3,6)}-${d.slice(6)}`;
     }
-});
+    if (digits.length === 10) {
+      return `(${digits.slice(0,3)}) ${digits.slice(3,6)}-${digits.slice(6)}`;
+    }
+    // International: keep + and group digits
+    if (hasPlus && digits.length > 10) {
+      return '+' + digits;
+    }
+    return raw; // fallback — don't mangle unknown formats
+  }
 
-client.on('qr', (qr) => {
-    qrcode.generate(qr, { small: true });
-    qrData = qr;
-    console.log('QR Code generated - scan with WhatsApp');
-});
+  function attachPhoneFormat(inputId) {
+    const el = document.getElementById(inputId);
+    if (!el) return;
+    el.addEventListener('input', function() {
+      const pos = this.selectionStart;
+      const raw = this.value;
+      // Only format if it looks like a US number (no + or starts with 1)
+      const digits = raw.replace(/\D/g, '');
+      if (digits.length >= 10 && !raw.startsWith('+')) {
+        const formatted = formatPhone(digits);
+        this.value = formatted;
+      }
+    });
+  }
 
-client.on('ready', () => {
-    isReady = true;
-    qrData = null;
-    console.log('\n\x1b[42m\x1b[30m ✅ WHATSAPP CONNECTED! \x1b[0m');
-    console.log('\x1b[32m━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\x1b[0m');
-    console.log('\x1b[32m  WhatsApp client is ready to send!  \x1b[0m');
-    console.log('\x1b[32m━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\x1b[0m\n');
-});
+  // ─── TAG COLORS ──────────────────────────────────────────
+  const TAG_PALETTE = [
+    ['#ff6b6b','#1a0a0a'],['#ffa94d','#1a0e00'],['#ffe066','#1a1500'],
+    ['#69db7c','#051a08'],['#4dabf7','#040f1a'],['#cc5de8','#120018'],
+    ['#f783ac','#1a0010'],['#38d9a9','#001a13'],['#a9e34b','#0d1a00'],
+    ['#74c0fc','#03111a'],['#ff8787','#1a0505'],['#63e6be','#001a0f'],
+  ];
 
-client.on('disconnected', () => {
-    isReady = false;
-    console.log('WhatsApp disconnected');
-    client.initialize();
-});
+  function tagColor(tag) {
+    let hash = 0;
+    for (let i = 0; i < tag.length; i++) hash = tag.charCodeAt(i) + ((hash << 5) - hash);
+    return TAG_PALETTE[Math.abs(hash) % TAG_PALETTE.length];
+  }
 
-client.initialize();
+  function tagHTML(label, removable=false, idx=null) {
+    const [bg, text] = tagColor(label);
+    const rm = removable ? `<span class="tag-pill-x" onclick="removePillTag(${idx})">✕</span>` : '';
+    return `<span class="tag-pill" style="background:${bg};color:${text}">${label}${rm}</span>`;
+  }
 
-app.get('/status', (req, res) => {
-    res.json({ ready: isReady, qr: qrData });
-});
+  function tagBadge(label) {
+    const [bg, text] = tagColor(label);
+    return `<span class="tag-pill" style="background:${bg};color:${text};">${label}</span>`;
+  }
 
-app.post('/send', async (req, res) => {
-    const { phone, message } = req.body;
-    if (!isReady) return res.status(503).json({ error: 'WhatsApp not ready' });
-    if (!phone || !message) return res.status(400).json({ error: 'phone and message required' });
+  // Live tag pill input
+  let pendingTags = [];
 
+  function renderPillPreview() {
+    document.getElementById('tag-pills-preview').innerHTML =
+      pendingTags.map((t, i) => tagHTML(t, true, i)).join('');
+    document.getElementById('new-tags').value = pendingTags.join(',');
+  }
+
+  function removePillTag(i) {
+    pendingTags.splice(i, 1);
+    renderPillPreview();
+  }
+
+  function initTagInput() {
+    const input = document.getElementById('tag-typing');
+    input.addEventListener('input', () => {
+      const val = input.value;
+      if (val.endsWith(',')) {
+        const tag = val.slice(0, -1).trim().toLowerCase();
+        if (tag && !pendingTags.includes(tag)) pendingTags.push(tag);
+        input.value = '';
+        renderPillPreview();
+      }
+    });
+    input.addEventListener('keydown', (e) => {
+      if (e.key === 'Enter') {
+        e.preventDefault();
+        const tag = input.value.trim().toLowerCase();
+        if (tag && !pendingTags.includes(tag)) pendingTags.push(tag);
+        input.value = '';
+        renderPillPreview();
+      }
+      if (e.key === 'Backspace' && input.value === '' && pendingTags.length) {
+        pendingTags.pop();
+        renderPillPreview();
+      }
+    });
+  }
+
+  // ─── STATE ───────────────────────────────────────────────
+  let contacts = []; // loaded from server
+  let allJobs = [];
+  let miniCalDate = new Date();
+  let fullCalDate = new Date();
+  let selectedDay = null;
+  let activeTagFilter = null;
+  let selectedRepeat = 'none';
+
+  // ─── TABS ────────────────────────────────────────────────
+  function switchTab(name) {
+    // Update tab buttons
+    document.querySelectorAll('.tab').forEach(btn => {
+      const fn = btn.getAttribute('onclick') || '';
+      const match = fn.match(/switchTab\('(\w+)'\)/);
+      if (match) btn.classList.toggle('active', match[1] === name);
+    });
+    const gearBtn = document.getElementById('gear-btn');
+    if (gearBtn) gearBtn.classList.toggle('active', name === 'settings');
+    // Update panels — only toggle known panels
+    ['calendar','contacts','log','settings'].forEach(t => {
+      const panel = document.getElementById(`panel-${t}`);
+      if (panel) panel.classList.toggle('active', t === name);
+    });
+    if (name === 'calendar') { renderFullCal(); loadJobs(); renderSchedTagPills(); }
+    if (name === 'contacts') { renderContactTable(); renderTagFilters(); }
+    if (name === 'log') loadLogs();
+    if (name === 'settings') {
+      updateSettingsStatus();
+      loadCountrySetting();
+      fetchCalendarEvents().then(renderSettingsEvents);
+      const inp = document.getElementById('settings-delay-input');
+      if (inp) inp.value = quickDelayMins;
+      document.getElementById('delay-saved-note').textContent = '';
+    }
+  }
+
+  // ─── TOAST ───────────────────────────────────────────────
+  function showToast(msg, error=false) {
+    const t = document.getElementById('toast');
+    t.textContent = msg;
+    t.className = 'toast show' + (error ? ' error' : '');
+    setTimeout(() => t.className = 'toast', 3000);
+  }
+
+  // ─── STATUS ──────────────────────────────────────────────
+  let wasConnected = null;
+
+  async function checkStatus() {
     try {
-        const chatId = phone.replace('+', '') + '@c.us';
-        await client.sendMessage(chatId, message);
-        res.json({ success: true });
-    } catch (err) {
-        res.status(500).json({ error: err.message });
+      const res = await fetch('/api/status');
+      const data = await res.json();
+      const dot = document.getElementById('status-dot');
+      const txt = document.getElementById('status-text');
+      const banner = document.getElementById('qr-banner');
+      if (data.ready) {
+        dot.className='dot online'; txt.textContent='Connected'; banner.classList.remove('visible');
+        if (wasConnected === false) showAlert('✅ WhatsApp connected!', 'success');
+        wasConnected = true;
+      } else {
+        dot.className='dot'; txt.textContent='Disconnected'; banner.classList.add('visible');
+        if (wasConnected === true) showAlert('⚠️ WhatsApp disconnected', 'error');
+        wasConnected = false;
+      }
+    } catch {
+      document.getElementById('status-text').textContent = 'Bridge Offline';
     }
-});
+  }
 
-const PORT = 3001;
-app.listen(PORT, () => console.log(`WhatsApp bridge running on port ${PORT}`));
+  function showAlert(msg, type='success') {
+    let el = document.getElementById('wa-alert');
+    if (!el) {
+      el = document.createElement('div');
+      el.id = 'wa-alert';
+      el.style.cssText = `position:fixed;top:24px;left:50%;transform:translateX(-50%) translateY(-80px);
+        padding:14px 28px;border-radius:10px;font-family:'Space Mono',monospace;font-size:0.82rem;
+        font-weight:700;letter-spacing:1px;z-index:9999;transition:transform 0.4s cubic-bezier(.34,1.56,.64,1),opacity 0.3s;
+        opacity:0;box-shadow:0 8px 32px rgba(0,0,0,0.4);`;
+      document.body.appendChild(el);
+    }
+    el.textContent = msg;
+    el.style.background = type === 'success' ? '#25d366' : '#e05555';
+    el.style.color = type === 'success' ? '#000' : '#fff';
+    el.style.opacity = '1';
+    el.style.transform = 'translateX(-50%) translateY(0)';
+    clearTimeout(el._timer);
+    el._timer = setTimeout(() => {
+      el.style.opacity = '0';
+      el.style.transform = 'translateX(-50%) translateY(-80px)';
+    }, 4000);
+  }
+
+  async function showQR() {
+    document.getElementById('qr-modal').classList.add('visible');
+    const res = await fetch('/api/status');
+    const data = await res.json();
+    const container = document.getElementById('qr-container');
+    container.innerHTML = '';
+    if (data.qr) new QRCode(container, { text: data.qr, width: 200, height: 200 });
+    else container.innerHTML = '<p style="color:#000;padding:20px">No QR available.<br>Check terminal.</p>';
+  }
+  function closeQR() { document.getElementById('qr-modal').classList.remove('visible'); }
+
+  // ─── TAGS ────────────────────────────────────────────────
+  function parseTags(tagStr) {
+    return tagStr.split(',').map(t => t.trim().toLowerCase()).filter(Boolean);
+  }
+
+  function getAllTags() {
+    const tags = new Set();
+    contacts.forEach(c => (c.tags || []).forEach(t => tags.add(t)));
+    return [...tags].sort();
+  }
+
+  function getContactsByTag(tag) {
+    return contacts.filter(c => (c.tags || []).includes(tag));
+  }
+
+  function renderTagFilters() {
+    const tags = getAllTags();
+    const container = document.getElementById('tag-filters');
+    if (!tags.length) { container.innerHTML = ''; return; }
+    const allBtn = `<button onclick="filterByTag(null)" style="background:${!activeTagFilter?'var(--green)':'#2a2a2a'};color:${!activeTagFilter?'#000':'var(--text)'};font-family:'Space Mono',monospace;font-size:0.65rem;font-weight:700;padding:4px 12px;border-radius:20px;border:none;cursor:pointer;margin:2px;">All</button>`;
+    const tagBtns = tags.map(t => {
+      const [bg, txt] = tagColor(t);
+      const isActive = activeTagFilter === t;
+      const style = `background:${bg};color:${txt};opacity:${isActive?'1':'0.65'};outline:${isActive?'2px solid '+bg:'none'};outline-offset:2px;font-family:'Space Mono',monospace;font-size:0.65rem;font-weight:700;padding:4px 12px;border-radius:20px;border:none;cursor:pointer;margin:2px;`;
+      return `<button onclick="filterByTag('${t}')" style="${style}">${t}</button>`;
+    }).join('');
+    container.innerHTML = allBtn + tagBtns;
+
+    // Update tag dropdown in calendar (element may not exist)
+    const schedTag = document.getElementById('sched-tag');
+    if (schedTag) {
+      schedTag.innerHTML = '<option value="">-- Select a tag --</option>' +
+        tags.map(t => `<option value="${t}">${t} (${getContactsByTag(t).length})</option>`).join('');
+    }
+  }
+
+  function filterByTag(tag) {
+    activeTagFilter = tag;
+    renderContactTable();
+    renderTagFilters();
+    const box = document.getElementById('broadcast-box');
+    if (tag) {
+      const count = getContactsByTag(tag).length;
+      document.getElementById('broadcast-tag-info').textContent = `${count} contact${count !== 1 ? 's' : ''} tagged "${tag}"`;
+      box.style.display = 'block';
+    } else {
+      box.style.display = 'none';
+    }
+  }
+
+  // ─── CONTACTS ────────────────────────────────────────────
+  async function fetchContacts() {
+    const res = await fetch('/api/contacts');
+    contacts = await res.json();
+    updateAllDropdowns();
+    renderTagFilters();
+    renderContactTable();
+  }
+
+  function updateAllDropdowns() {
+    ['send-contact','sched-contact'].forEach(id => {
+      const sel = document.getElementById(id);
+      if (!sel) return;
+      const prev = sel.value;
+      sel.innerHTML = '<option value="">-- Select a contact --</option>' +
+        contacts.map(c => `<option value="${c.phone}">${c.name} — ${c.phone}</option>`).join('');
+      sel.value = prev;
+    });
+
+    // Update send-tag dropdown in Quick Send
+    const tags = getAllTags();
+    const tagOpts = '<option value="">-- Select a tag --</option>' +
+      tags.map(t => `<option value="${t}">${t} (${getContactsByTag(t).length})</option>`).join('');
+    const sendTag = document.getElementById('send-tag');
+    if (sendTag) {
+      const prev = sendTag.value;
+      sendTag.innerHTML = tagOpts;
+      sendTag.value = prev;
+      sendTag.onchange = updateQSTagPreview;
+    }
+
+    // Refresh calendar tag pills
+    renderSchedTagPills();
+  }
+
+  function renderContactTable() {
+    const search = (document.getElementById('contact-search')?.value || '').toLowerCase();
+    let filtered = contacts;
+    if (activeTagFilter) filtered = filtered.filter(c => (c.tags || []).includes(activeTagFilter));
+    if (search) filtered = filtered.filter(c => c.name.toLowerCase().includes(search) || c.phone.includes(search));
+
+    const wrap = document.getElementById('contact-table-wrap');
+    if (!filtered.length) { wrap.innerHTML = '<div class="empty">No contacts found</div>'; return; }
+    wrap.innerHTML = `<table class="contact-table">
+      <thead><tr><th>Name</th><th>Phone</th><th>Tags</th><th></th></tr></thead>
+      <tbody>${filtered.map(c => {
+        const tagsHTML = (c.tags || []).map((t, ti) => {
+          const [bg, fg] = tagColor(t);
+          return `<span class="tag-pill" style="background:${bg};color:${fg};">${t}<span class="tag-pill-x" onclick="event.stopPropagation();removeContactTag(${c.id},${ti})" title="Remove tag">✕</span></span>`;
+        }).join('');
+        return `<tr>
+          <td>${c.name}</td>
+          <td class="contact-phone-cell">${c.phone}</td>
+          <td>
+            <div style="display:flex;flex-wrap:wrap;align-items:center;gap:4px;">
+              ${tagsHTML}
+              <input
+                id="tag-add-${c.id}"
+                type="text"
+                placeholder="+ tag"
+                onkeydown="handleInlineTagKey(event, ${c.id})"
+                style="background:transparent;border:1px dashed var(--border);border-radius:20px;color:var(--muted);
+                       font-family:'Space Mono',monospace;font-size:0.65rem;padding:3px 8px;width:64px;
+                       outline:none;transition:all 0.2s;"
+                onfocus="this.style.borderColor='var(--green)';this.style.color='var(--text)';this.style.width='90px';"
+                onblur="this.style.borderColor='var(--border)';this.style.color='var(--muted)';this.style.width='64px';this.value='';"
+              />
+            </div>
+          </td>
+          <td style="display:flex;gap:6px;justify-content:flex-end;">
+            <button class="btn btn-sm btn-green" onclick="quickSendTo('${c.phone}')">Send</button>
+            <button class="btn btn-sm btn-danger" onclick="deleteContact(${c.id})">✕</button>
+          </td>
+        </tr>`;
+      }).join('')}</tbody>
+    </table>`;
+  }
+
+  async function addContact() {
+    const name = document.getElementById('new-name').value.trim();
+    const phone = document.getElementById('new-phone').value.trim();
+    const typingVal = document.getElementById('tag-typing').value.trim().toLowerCase();
+    if (typingVal && !pendingTags.includes(typingVal)) pendingTags.push(typingVal);
+    const tags = [...pendingTags];
+    const normalizedPhone = normalizePhone(phone);
+    if (!name || !phone) return showToast('Name and phone are required', true);
+    const res = await fetch('/api/contacts', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ name, phone: normalizedPhone, tags })
+    });
+    const data = await res.json();
+    if (!data.success) return showToast(data.error || 'Failed to add contact', true);
+    document.getElementById('new-name').value = '';
+    document.getElementById('new-phone').value = '';
+    document.getElementById('tag-typing').value = '';
+    pendingTags = [];
+    renderPillPreview();
+    await fetchContacts();
+    showToast('Contact added!');
+  }
+
+  async function deleteContact(id) {
+    await fetch(`/api/contacts/${id}`, { method: 'DELETE' });
+    await fetchContacts();
+    showToast('Contact removed');
+  }
+
+  async function handleInlineTagKey(e, contactId) {
+    if (e.key === ',' || e.key === 'Enter') {
+      e.preventDefault();
+      const val = e.target.value.replace(',', '').trim().toLowerCase();
+      if (!val) return;
+      const c = contacts.find(c => c.id === contactId);
+      if (!c) return;
+      if ((c.tags || []).includes(val)) {
+        e.target.value = '';
+        return showToast(`"${val}" already on this contact`, true);
+      }
+      c.tags = [...(c.tags || []), val];
+      await fetch(`/api/contacts/${contactId}/tags`, {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ tags: c.tags })
+      });
+      await fetchContacts();
+      renderTagFilters();
+      setTimeout(() => {
+        const el = document.getElementById(`tag-add-${contactId}`);
+        if (el) el.focus();
+      }, 50);
+      showToast('Tag added');
+    }
+  }
+
+  async function removeContactTag(contactId, tagIdx) {
+    const c = contacts.find(c => c.id === contactId);
+    if (!c) return;
+    c.tags = (c.tags || []).filter((_, i) => i !== tagIdx);
+    await fetch(`/api/contacts/${contactId}/tags`, {
+      method: 'PUT',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ tags: c.tags })
+    });
+    await fetchContacts();
+    renderTagFilters();
+    updateAllDropdowns();
+    showToast('Tag removed');
+  }
+
+  function fillPhone(selectId, inputId) {
+    const val = document.getElementById(selectId).value;
+    if (val) document.getElementById(inputId).value = val;
+  }
+
+  function quickSendTo(phone) {
+    // Switch to Dispatch tab and pre-fill the recipient
+    switchTab('calendar');
+    const contact = contacts.find(c => c.phone === phone);
+    if (contact) {
+      selectSchedContact(contact.id);
+    } else {
+      document.getElementById('sched-contact-search').value = phone;
+    }
+    document.getElementById('sched-msg').focus();
+  }
+
+  async function broadcastToTag() {
+    if (!activeTagFilter) return;
+    const message = document.getElementById('broadcast-msg').value.trim();
+    if (!message) return showToast('Enter a message', true);
+    const phones = getContactsByTag(activeTagFilter).map(c => c.phone);
+    const res = await fetch('/api/send_bulk', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ phones, message }) });
+    const data = await res.json();
+    if (data.success) { showToast(`Sent to ${data.sent} contacts!`); document.getElementById('broadcast-msg').value = ''; }
+    else showToast(data.error || 'Failed', true);
+  }
+
+  // ─── REPEAT ──────────────────────────────────────────────
+  function setRepeat(val) {
+    selectedRepeat = val;
+    ['none','daily','weekly','yearly'].forEach(r => {
+      document.getElementById(`rep-${r}`).classList.toggle('active', r === val);
+    });
+  }
+
+  // ╔═══════════════════════════════════════════════════════╗
+  // ║  QUICK SEND TAB — Mode toggle (Contact / Tag)         ║
+  // ║  setQSMode()        : switches between contact/tag    ║
+  // ║  updateQSTagPreview(): shows recipients for tag       ║
+  // ║  sendNow()          : fires the immediate send        ║
+  // ╚═══════════════════════════════════════════════════════╝
+
+  let qsMode = 'contact';
+
+  function setQSMode(mode) {
+    qsMode = mode;
+    document.getElementById('qs-mode-contact').classList.toggle('active', mode === 'contact');
+    document.getElementById('qs-mode-tag').classList.toggle('active', mode === 'tag');
+    document.getElementById('qs-contact-fields').style.display = mode === 'contact' ? '' : 'none';
+    document.getElementById('qs-tag-fields').style.display = mode === 'tag' ? '' : 'none';
+    if (mode === 'tag') updateQSTagPreview();
+  }
+
+  function updateQSTagPreview() {
+    const tag = document.getElementById('send-tag')?.value;
+    const preview = document.getElementById('qs-tag-preview');
+    if (!preview) return;
+    if (!tag) { preview.innerHTML = ''; return; }
+    const matched = getContactsByTag(tag);
+    if (!matched.length) { preview.innerHTML = `<span style="font-size:0.78rem;color:var(--muted)">No contacts with this tag</span>`; return; }
+    preview.innerHTML = `<span style="font-size:0.75rem;color:var(--muted);margin-right:6px;">Sending to:</span>` +
+      matched.map(c => `<span class="tag" style="background:var(--surface2);border:1px solid var(--border);color:var(--text)">${c.name}</span>`).join('');
+  }
+
+  // ─── sendNow: fires immediately from Quick Send tab ──────
+  async function sendNow() {
+    const message = document.getElementById('send-msg').value.trim();
+    if (!message) return showToast('Enter a message', true);
+
+    if (qsMode === 'tag') {
+      // Tag broadcast — send to all contacts with selected tag
+      const tag = document.getElementById('send-tag').value;
+      if (!tag) return showToast('Select a tag', true);
+      const phones = getContactsByTag(tag).map(c => c.phone);
+      if (!phones.length) return showToast(`No contacts with tag "${tag}"`, true);
+      const res = await fetch('/api/send_bulk', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ phones, message }) });
+      const data = await res.json();
+      if (data.success) { showToast(`Sent to ${data.sent} contacts!`); document.getElementById('send-msg').value = ''; }
+      else showToast(data.error || 'Failed', true);
+    } else {
+      // Single contact or manual phone number
+      const phone = document.getElementById('send-phone').value.trim();
+      if (!phone) return showToast('Select a contact or enter a phone', true);
+      const res = await fetch('/api/send', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ phone, message }) });
+      const data = await res.json();
+      if (data.success) { showToast('Message sent!'); document.getElementById('send-msg').value = ''; }
+      else showToast(data.error || 'Failed to send', true);
+    }
+  }
+
+  // ─── QUICK TIME ───────────────────────────────────────────
+  let activeQuickTime = null;
+  let quickDelayMins = parseInt(localStorage.getItem('wpp_quick_delay') || '15');
+
+  function saveQuickDelay() {
+    const val = parseInt(document.getElementById('settings-delay-input').value);
+    if (!val || val < 1 || val > 1440) return showToast('Enter 1–1440 minutes', true);
+    applyQuickDelay(val);
+    const note = document.getElementById('delay-saved-note');
+    note.textContent = `✓ Button updated to +${val} min`;
+    setTimeout(() => { note.textContent = ''; }, 3000);
+  }
+
+  function applyQuickDelay(mins) {
+    quickDelayMins = mins;
+    localStorage.setItem('wpp_quick_delay', mins);
+    const btn = document.getElementById('qt-15');
+    if (btn) btn.textContent = `+${mins} min`;
+  }
+
+  function setQuickTime(val) {
+    const pad = n => String(n).padStart(2, '0');
+    const now = new Date();
+
+    if (val === 'delay') {
+      now.setMinutes(now.getMinutes() + quickDelayMins);
+      setQTActive(['15','today']);
+    } else if (val === 'today') {
+      now.setHours(now.getHours() + 1, 0, 0, 0);
+      setQTActive(['today']);
+    } else if (val === 'tomorrow') {
+      now.setDate(now.getDate() + 1);
+      now.setHours(9, 0, 0, 0);
+      setQTActive(['tomorrow']);
+    }
+
+    const formatted = `${now.getFullYear()}-${pad(now.getMonth()+1)}-${pad(now.getDate())}T${pad(now.getHours())}:${pad(now.getMinutes())}`;
+    document.getElementById('sched-time').value = formatted;
+
+    const MONTHS = ['January','February','March','April','May','June','July','August','September','October','November','December'];
+    document.getElementById('selected-date-label').textContent = `${MONTHS[now.getMonth()]} ${now.getDate()}, ${now.getFullYear()}`;
+  }
+
+  function setQTActive(ids) {
+    ['15','today','tomorrow'].forEach(id => {
+      const btn = document.getElementById(`qt-${id}`);
+      if (btn) btn.classList.toggle('active', ids.includes(id));
+    });
+  }
+
+  function clearQuickTime() {
+    ['15','today','tomorrow'].forEach(id => {
+      const btn = document.getElementById(`qt-${id}`);
+      if (btn) btn.classList.remove('active');
+    });
+  }
+
+  // ─── SCHEDULE RECIPIENT ──────────────────────────────────
+  // selectedSchedTags: Set of tag strings (multi-select)
+  // selectedSchedContact: single contact object or null
+  let selectedSchedContact = null;
+  let selectedSchedTags    = new Set();
+
+  function renderSchedTagPills() {
+    const tags = getAllTags();
+    const container = document.getElementById('sched-tag-pills');
+    if (!tags.length) { container.style.display = 'none'; return; }
+    container.style.display = 'flex';
+    container.innerHTML = tags.map(t => {
+      const [bg, fg] = tagColor(t);
+      const isSelected = selectedSchedTags.has(t);
+      return `<span class="tag-pill" onclick="selectSchedTag('${t}')"
+        style="background:${bg};color:${fg};opacity:${isSelected?'1':'0.4'};
+               outline:${isSelected?'2px solid '+bg:'none'};outline-offset:2px;
+               cursor:pointer;transition:all 0.15s;">${t}${isSelected?' ✓':''}</span>`;
+    }).join('');
+  }
+
+  function selectSchedTag(tag) {
+    // Toggle tag in/out of selection set
+    if (selectedSchedTags.has(tag)) selectedSchedTags.delete(tag);
+    else selectedSchedTags.add(tag);
+    // Clear contact selection when tags are active
+    if (selectedSchedTags.size > 0) {
+      selectedSchedContact = null;
+      clearSchedContactPill();
+    }
+    renderSchedTagPills();
+    updateSchedSearchBoxState();
+    updateSchedPreview();
+  }
+
+  function updateSchedPreview() {
+    const preview = document.getElementById('sched-recipient-preview');
+    if (selectedSchedTags.size > 0) {
+      const phones = getPhonesBySelectedTags();
+      const tagList = [...selectedSchedTags].join(', ');
+      preview.textContent = `Broadcasting to ${phones.length} contact${phones.length!==1?'s':''} across: ${tagList}`;
+    } else {
+      preview.textContent = '';
+    }
+  }
+
+  function getPhonesBySelectedTags() {
+    const seen = new Set();
+    const phones = [];
+    selectedSchedTags.forEach(tag => {
+      getContactsByTag(tag).forEach(c => {
+        if (!seen.has(c.phone)) { seen.add(c.phone); phones.push(c.phone); }
+      });
+    });
+    return phones;
+  }
+
+  // Dim + italicize search box when tags are active; restore when not
+  function updateSchedSearchBoxState() {
+    const box    = document.getElementById('sched-recipient-box');
+    const input  = document.getElementById('sched-contact-search');
+    const hasTags = selectedSchedTags.size > 0;
+    box.style.opacity    = hasTags ? '0.45' : '1';
+    box.style.pointerEvents = hasTags ? 'none' : '';
+    input.style.fontStyle = hasTags ? 'italic' : 'normal';
+    input.placeholder     = hasTags ? 'Tag selected — or click a tag to deselect' : 'Search contact or type number...';
+    // Pulse animation when tags first selected
+    if (hasTags) {
+      box.classList.remove('tag-active');
+      void box.offsetWidth; // reflow to restart animation
+      box.classList.add('tag-active');
+    } else {
+      box.classList.remove('tag-active');
+    }
+  }
+
+  function renderSchedResults() {
+    if (selectedSchedTags.size > 0) return; // tags active — ignore typing
+    const val = document.getElementById('sched-contact-search').value.trim();
+    const results = document.getElementById('sched-contact-results');
+    document.getElementById('sched-recipient-preview').textContent = '';
+    if (!val) { results.innerHTML = ''; return; }
+    const filtered = contacts.filter(c =>
+      c.name.toLowerCase().includes(val.toLowerCase()) || c.phone.includes(val)
+    );
+    if (!filtered.length) { results.innerHTML = ''; return; }
+    results.innerHTML = filtered.slice(0, 6).map(c => {
+      const tags = (c.tags||[]).map(t => { const [bg,fg]=tagColor(t); return `<span class="tag-pill" style="background:${bg};color:${fg};font-size:0.55rem;padding:2px 6px;">${t}</span>`; }).join('');
+      return `<div onclick="selectSchedContact(${c.id})" style="padding:8px 12px;border-radius:6px;cursor:pointer;display:flex;align-items:center;justify-content:space-between;gap:8px;transition:background 0.15s;" onmouseover="this.style.background='var(--surface2)'" onmouseout="this.style.background='transparent'">
+        <div><div style="font-size:0.85rem;font-weight:500;">${c.name}</div>
+        <div style="font-family:'Space Mono',monospace;font-size:0.7rem;color:var(--muted);">${c.phone}</div></div>
+        <div style="display:flex;gap:3px;flex-wrap:wrap;justify-content:flex-end;">${tags}</div>
+      </div>`;
+    }).join('');
+  }
+
+  function selectSchedContact(id) {
+    selectedSchedContact = contacts.find(c => c.id === id);
+    selectedSchedTags.clear();
+    renderSchedTagPills();
+    updateSchedSearchBoxState();
+    document.getElementById('sched-contact-search').value = '';
+    document.getElementById('sched-contact-results').innerHTML = '';
+    document.getElementById('sched-recipient-preview').textContent = '';
+    const [bg, fg] = tagColor(selectedSchedContact.name);
+    document.getElementById('sched-contact-pills').innerHTML =
+      `<span class="tag-pill" style="background:${bg};color:${fg};">${selectedSchedContact.name}<span class="tag-pill-x" onclick="clearSchedContact()">✕</span></span>`;
+    document.getElementById('sched-recipient-box').style.borderColor = 'var(--green)';
+  }
+
+  function clearSchedContactPill() {
+    document.getElementById('sched-contact-pills').innerHTML = '';
+    const box = document.getElementById('sched-recipient-box');
+    if (box) box.style.borderColor = 'var(--border)';
+  }
+
+  function clearSchedContact() {
+    selectedSchedContact = null;
+    clearSchedContactPill();
+    updateSchedSearchBoxState();
+  }
+
+  // ─── SEND NOW FROM CALENDAR ──────────────────────────────
+  async function sendNowFromCalendar() {
+    const message = document.getElementById('sched-msg').value.trim();
+    if (!message) return showToast('Enter a message first', true);
+
+    let phones = [];
+    if (selectedSchedTags.size > 0) {
+      phones = getPhonesBySelectedTags();
+      if (!phones.length) return showToast('No contacts found for selected tags', true);
+    } else if (selectedSchedContact) {
+      phones = [selectedSchedContact.phone];
+    } else {
+      const raw = document.getElementById('sched-contact-search').value.trim();
+      if (!raw) return showToast('Select a recipient first', true);
+      phones = [raw];
+    }
+
+    const endpoint = phones.length > 1 ? '/api/send_bulk' : '/api/send';
+    const tagList = [...selectedSchedTags];
+    const body = phones.length > 1
+      ? { phones, message, tags: tagList.length ? tagList : undefined }
+      : { phone: phones[0], message };
+    const res = await fetch(endpoint, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) });
+    const data = await res.json();
+    if (data.success) {
+      showToast(phones.length > 1 ? `Sent to ${phones.length} contacts!` : 'Message sent!');
+      document.getElementById('sched-msg').value = '';
+    } else showToast(data.error || 'Failed to send', true);
+  }
+
+  // ─── SCHEDULE ────────────────────────────────────────────
+  async function scheduleMsg() {
+    const message = document.getElementById('sched-msg').value.trim();
+    const localTime = document.getElementById('sched-time').value;
+    if (!message || !localTime) return showToast('Fill in message and time', true);
+
+    let phones = [];
+    let label = '';
+
+    if (selectedSchedTags.size > 0) {
+      phones = getPhonesBySelectedTags();
+      if (!phones.length) return showToast('No contacts found for selected tags', true);
+      label = `Scheduled for ${phones.length} contacts`;
+    } else if (selectedSchedContact) {
+      phones = [selectedSchedContact.phone];
+      label = 'Message scheduled!';
+    } else {
+      const typed = document.getElementById('sched-contact-search').value.trim();
+      if (!typed) return showToast('Select a contact, tag, or type a phone number', true);
+      phones = [normalizePhone(typed)];
+      label = 'Message scheduled!';
+    }
+
+    const send_at = new Date(localTime).toISOString().slice(0, 19);
+    const res = await fetch('/api/schedule', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ phones, message, send_at, repeat: selectedRepeat }) });
+    const data = await res.json();
+    if (data.success) {
+      showToast(label);
+      document.getElementById('sched-msg').value = '';
+      document.getElementById('sched-contact-search').value = '';
+      document.getElementById('sched-contact-results').innerHTML = '';
+      selectedSchedContact = null;
+      selectedSchedTags.clear();
+      clearSchedContactPill();
+      renderSchedTagPills();
+      updateSchedSearchBoxState();
+      document.getElementById('sched-recipient-preview').textContent = '';
+      loadJobs();
+    } else showToast(data.error || 'Failed to schedule', true);
+  }
+
+  // ─── JOBS ─────────────────────────────────────────────────
+  async function loadJobs() {
+    const res = await fetch('/api/jobs');
+    allJobs = await res.json();
+    renderAllJobs();
+    renderMiniCal();
+    renderFullCal();
+    if (selectedDay) renderDayJobs(selectedDay);
+  }
+
+  function renderAllJobs() {
+    const list = document.getElementById('all-jobs-list');
+    if (!allJobs.length) { list.innerHTML = '<div class="empty">No scheduled messages</div>'; return; }
+    list.innerHTML = allJobs.map(j => jobHTML(j)).join('');
+  }
+
+  const REPEAT_LABELS = { none: '', daily: '🔁 Daily', weekly: '🔁 Weekly', yearly: '🔁 Yearly' };
+
+  function jobHTML(j) {
+    const name = contacts.find(c => c.phone === j.args[0])?.name || j.args[0];
+    const repeatLabel = j.repeat && j.repeat !== 'none' ? `<div class="job-repeat">${REPEAT_LABELS[j.repeat]}</div>` : '';
+    return `<div class="job-item">
+      <div class="job-info">
+        <div class="job-phone">${name}</div>
+        <div class="job-msg">${j.args[1]}</div>
+        <div class="job-time">⏰ ${j.next_run}</div>
+        ${repeatLabel}
+      </div>
+      <div style="display:flex;flex-direction:column;gap:5px;">
+        <button class="delete-btn" style="color:var(--green);border-color:var(--border);" onclick="openEditModal('${j.id}')">EDIT</button>
+        <button class="delete-btn" onclick="deleteJob('${j.id}')">CANCEL</button>
+      </div>
+    </div>`;
+  }
+
+  async function deleteJob(id) {
+    await fetch(`/api/jobs/${id}`, { method: 'DELETE' });
+    showToast('Job cancelled');
+    loadJobs();
+  }
+
+  // ─── MINI CALENDAR ───────────────────────────────────────
+  const DAYS = ['Su','Mo','Tu','We','Th','Fr','Sa'];
+  const MONTHS = ['January','February','March','April','May','June','July','August','September','October','November','December'];
+
+  function jobDaysForMonth(year, month) {
+    const days = new Set();
+    allJobs.forEach(j => {
+      const d = new Date(j.next_run);
+      if (d.getFullYear() === year && d.getMonth() === month) days.add(d.getDate());
+    });
+    return days;
+  }
+
+  function renderMiniCal() {
+    const y = miniCalDate.getFullYear(), m = miniCalDate.getMonth();
+    document.getElementById('mini-cal-title').textContent = `${MONTHS[m]} ${y}`;
+    const first = new Date(y, m, 1).getDay(), daysInMonth = new Date(y, m+1, 0).getDate();
+    const today = new Date(), eventDays = jobDaysForMonth(y, m);
+    let html = DAYS.map(d => `<div class="cal-day-label">${d}</div>`).join('');
+    for (let i = 0; i < first; i++) html += `<div class="cal-day empty-day"></div>`;
+    for (let d = 1; d <= daysInMonth; d++) {
+      const isToday = today.getFullYear()===y && today.getMonth()===m && today.getDate()===d;
+      const miniHol = getHoliday(y, m+1, d);
+      html += `<div class="cal-day${isToday?' today':''}${eventDays.has(d)?' has-event':''}${miniHol?' has-holiday':''}" title="${miniHol?miniHol.emoji+' '+miniHol.name:''}">${d}</div>`;
+    }
+    document.getElementById('mini-cal-grid').innerHTML = html;
+  }
+
+  function miniCalPrev() { miniCalDate = new Date(miniCalDate.getFullYear(), miniCalDate.getMonth()-1, 1); renderMiniCal(); }
+  function miniCalNext() { miniCalDate = new Date(miniCalDate.getFullYear(), miniCalDate.getMonth()+1, 1); renderMiniCal(); }
+
+  // ─── HOLIDAYS ────────────────────────────────────────────
+  // Fixed-date holidays (month is 1-based)
+  // US Federal Holidays only (fixed-date ones; floating handled below)
+  const FIXED_HOLIDAYS = {
+    '1-1':   { name: "New Year's Day",    emoji: '🎆' },
+    '6-19':  { name: 'Juneteenth',        emoji: '✊' },
+    '7-4':   { name: 'Independence Day',  emoji: '🎇' },
+    '11-11': { name: 'Veterans Day',      emoji: '🎖️' },
+    '12-25': { name: 'Christmas Day',     emoji: '🎁' },
+  };
+
+  // Floating holidays computed per-year
+  function getFloatingHolidays(year) {
+    const h = {};
+    const nthWeekday = (month, weekday, n) => {
+      // month: 1-based, weekday: 0=Sun, n: 1-based (1=first, -1=last)
+      if (n > 0) {
+        const d = new Date(year, month - 1, 1);
+        let count = 0;
+        while (true) {
+          if (d.getDay() === weekday) { count++; if (count === n) return d.getDate(); }
+          d.setDate(d.getDate() + 1);
+        }
+      } else { // last
+        const d = new Date(year, month, 0);
+        while (d.getDay() !== weekday) d.setDate(d.getDate() - 1);
+        return d.getDate();
+      }
+    };
+    // MLK Day: 3rd Monday of January
+    h[`1-${nthWeekday(1,1,3)}`]   = { name: 'MLK Day',          emoji: '✊' };
+    // Presidents Day: 3rd Monday of February
+    h[`2-${nthWeekday(2,1,3)}`]   = { name: "Presidents' Day",  emoji: '🦅' };
+    // Memorial Day: last Monday of May
+    h[`5-${nthWeekday(5,1,-1)}`]  = { name: 'Memorial Day',     emoji: '🪖' };
+    // Labor Day: 1st Monday of September
+    h[`9-${nthWeekday(9,1,1)}`]   = { name: 'Labor Day',        emoji: '⚒️' };
+    // Columbus Day: 2nd Monday of October
+    h[`10-${nthWeekday(10,1,2)}`] = { name: 'Columbus Day',     emoji: '⚓' };
+    // Thanksgiving: 4th Thursday of November
+    h[`11-${nthWeekday(11,4,4)}`] = { name: 'Thanksgiving',     emoji: '🦃' };
+    return h;
+  }
+
+  // ─── CUSTOM / DISABLED EVENTS (server-side) ─────────────
+  let disabledHolidays = new Set();
+  let customEvents     = [];
+
+  async function fetchCalendarEvents() {
+    const [evRes, disRes] = await Promise.all([
+      fetch('/api/calendar/events'),
+      fetch('/api/calendar/holidays/disabled')
+    ]);
+    customEvents     = await evRes.json();
+    const disabledArr = await disRes.json();
+    disabledHolidays = new Set(disabledArr);
+  }
+
+  function getHoliday(year, month, day) {
+    const key = `${month}-${day}`;
+    const custom = customEvents.find(e => e.key === key);
+    if (custom) return custom;
+    if (disabledHolidays.has(key)) return null;
+    const floating = getFloatingHolidays(year);
+    return floating[key] || FIXED_HOLIDAYS[key] || null;
+  }
+
+  // Returns ALL holidays for a given year (for settings list)
+  function getAllHolidaysForYear(year) {
+    const floating = getFloatingHolidays(year);
+    const all = { ...FIXED_HOLIDAYS, ...floating };
+    // Sort by month-day
+    return Object.entries(all)
+      .map(([key, val]) => ({ key, ...val }))
+      .sort((a, b) => {
+        const [am, ad] = a.key.split('-').map(Number);
+        const [bm, bd] = b.key.split('-').map(Number);
+        return am !== bm ? am - bm : ad - bd;
+      });
+  }
+
+  // ─── EMOJI PICKER ────────────────────────────────────────
+  const EMOJI_SET = [
+    '🎉','🎊','🎈','🎁','🎂','🥳','🎆','🎇','✨','⭐','🌟','💫','🔥','❤️','🧡','💛','💚','💙','💜','🖤','🤍',
+    '😀','😍','🥰','😎','🤩','🥳','😂','🤣','😊','🙏','👏','🫶','💪','✌️','👍','🫡',
+    '🌸','🌺','🌻','🌹','💐','🍀','🌿','🌲','🌴','🎋','🍁','🌾',
+    '🏆','🥇','🎯','🎮','🎨','🎭','🎬','🎤','🎵','🎶','🎸','🎹',
+    '🚀','✈️','🌍','🌎','🌏','🗺️','🧭','⛵','🚗','🚂','🏠','🏡',
+    '💼','📅','📌','📎','✏️','📝','📊','📈','💡','🔔','📢','📣',
+    '🦃','🎄','🎃','🐣','🕎','🌙','☀️','⛄','🎑','🧨','🪔','🕯️',
+    '🍕','🍔','🎂','🍰','🥂','🍾','☕','🧃','🍫','🍭','🍩','🎂',
+    '💐','🌷','🌼','🌸','🌺','🪷','🌻','💮','🏵️',
+    '👨‍👩‍👧','👨‍👩‍👦','👪','👶','🧒','👦','👧','🧑','👩','👨','🧓','👴','👵',
+    '🤝','🫂','💌','📬','💬','🗣️','📞','📱','💻','🖥️',
+  ];
+
+  function toggleEmojiPicker() {
+    const picker = document.getElementById('emoji-picker');
+    const grid   = document.getElementById('emoji-grid');
+    if (picker.style.display === 'none') {
+      // Build grid if empty
+      if (!grid.innerHTML) {
+        grid.innerHTML = EMOJI_SET.map(e =>
+          `<button onclick="pickEmoji('${e}')" style="background:none;border:none;font-size:1.3rem;cursor:pointer;padding:3px;border-radius:5px;line-height:1;transition:background 0.1s;" onmouseover="this.style.background='var(--surface2)'" onmouseout="this.style.background='none'">${e}</button>`
+        ).join('');
+      }
+      picker.style.display = '';
+      // Close on outside click
+      setTimeout(() => document.addEventListener('click', closePicker), 0);
+    } else {
+      picker.style.display = 'none';
+    }
+  }
+
+  function pickEmoji(e) {
+    document.getElementById('ce-emoji').value = e;
+    document.getElementById('emoji-picker').style.display = 'none';
+    document.removeEventListener('click', closePicker);
+  }
+
+  function closePicker(ev) {
+    const picker = document.getElementById('emoji-picker');
+    const input  = document.getElementById('ce-emoji');
+    if (picker && !picker.contains(ev.target) && ev.target !== input) {
+      picker.style.display = 'none';
+      document.removeEventListener('click', closePicker);
+    }
+  }
+
+  // ─── SETTINGS: Calendar Events panel ─────────────────────
+  function renderSettingsEvents() {
+    const year = new Date().getFullYear();
+    const holidays = getAllHolidaysForYear(year);
+    const MONTH_NAMES = ['','Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
+
+    // Built-in list
+    const listEl = document.getElementById('settings-holidays-list');
+    listEl.innerHTML = holidays.map(h => {
+      const disabled = disabledHolidays.has(h.key);
+      const [m, d] = h.key.split('-');
+      return `<div class="event-row${disabled?' event-disabled':''}" data-key="${h.key}">
+        <span class="event-emoji">${h.emoji}</span>
+        <span class="event-date">${MONTH_NAMES[+m]} ${d}</span>
+        <span class="event-name">${h.name}</span>
+        <button class="event-toggle-btn" onclick="toggleHoliday('${h.key}')" title="${disabled?'Re-enable':'Hide from calendar'}">
+          ${disabled ? '＋' : '✕'}
+        </button>
+      </div>`;
+    }).join('');
+
+    // Custom events list
+    const customWrap = document.getElementById('settings-custom-events-wrap');
+    const customList = document.getElementById('settings-custom-events-list');
+    if (customEvents.length) {
+      customWrap.style.display = '';
+      customList.innerHTML = customEvents.map((e, i) => {
+        const [m, d] = e.key.split('-');
+        return `<div class="event-row">
+          <span class="event-emoji">${e.emoji || '📅'}</span>
+          <span class="event-date">${MONTH_NAMES[+m]} ${d}</span>
+          <span class="event-name">${e.name}</span>
+          <button class="event-toggle-btn event-delete-btn" onclick="deleteCustomEvent(${e.id})" title="Remove">✕</button>
+        </div>`;
+      }).join('');
+    } else {
+      customWrap.style.display = 'none';
+    }
+  }
+
+  async function toggleHoliday(key) {
+    if (disabledHolidays.has(key)) disabledHolidays.delete(key);
+    else disabledHolidays.add(key);
+    await fetch('/api/calendar/holidays/disabled', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ keys: [...disabledHolidays] })
+    });
+    renderSettingsEvents();
+    renderFullCal();
+    renderMiniCal();
+  }
+
+  async function addCustomEvent() {
+    const month = document.getElementById('ce-month').value;
+    const day   = document.getElementById('ce-day').value.trim();
+    const name  = document.getElementById('ce-name').value.trim();
+    const emoji = document.getElementById('ce-emoji').value.trim() || '📅';
+    if (!day || !name) return showToast('Enter a day and event name', true);
+    const d = parseInt(day);
+    if (d < 1 || d > 31) return showToast('Invalid day', true);
+    const key = `${month}-${d}`;
+    if (customEvents.find(e => e.key === key)) return showToast('You already have a custom event on that date', true);
+    const res = await fetch('/api/calendar/events', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ key, name, emoji })
+    });
+    const data = await res.json();
+    if (!data.success) return showToast(data.error || 'Failed to add event', true);
+    await fetchCalendarEvents();
+    document.getElementById('ce-day').value  = '';
+    document.getElementById('ce-name').value = '';
+    document.getElementById('ce-emoji').value = '';
+    renderSettingsEvents();
+    renderFullCal();
+    renderMiniCal();
+    showToast(`"${name}" added to calendar`);
+  }
+
+  async function deleteCustomEvent(id) {
+    await fetch(`/api/calendar/events/${id}`, { method: 'DELETE' });
+    await fetchCalendarEvents();
+    renderSettingsEvents();
+    renderFullCal();
+    renderMiniCal();
+    showToast('Custom event removed');
+  }
+
+  // ─── FULL CALENDAR ───────────────────────────────────────
+  function renderFullCal() {
+    const y = fullCalDate.getFullYear(), m = fullCalDate.getMonth();
+    document.getElementById('full-cal-title').textContent = `${MONTHS[m]} ${y}`;
+    const first = new Date(y, m, 1).getDay(), daysInMonth = new Date(y, m+1, 0).getDate();
+    const today = new Date();
+    const eventDays = {};
+    allJobs.forEach(j => {
+      const d = new Date(j.next_run);
+      if (d.getFullYear()===y && d.getMonth()===m) {
+        const day = d.getDate();
+        if (!eventDays[day]) eventDays[day] = [];
+        eventDays[day].push(j);
+      }
+    });
+    let html = DAYS.map(d => `<div class="full-day-label">${d}</div>`).join('');
+    for (let i = 0; i < first; i++) html += `<div class="full-day empty-day"></div>`;
+    for (let d = 1; d <= daysInMonth; d++) {
+      const isToday = today.getFullYear()===y && today.getMonth()===m && today.getDate()===d;
+      const isSelected = selectedDay && selectedDay.y===y && selectedDay.m===m && selectedDay.d===d;
+      const events = eventDays[d] || [];
+      const evHTML = events.slice(0,2).map(j => {
+        const name = contacts.find(c => c.phone===j.args[0])?.name || j.args[0];
+        return `<div class="day-event${j.repeat && j.repeat!=='none'?' recurring':''}" title="${j.args[1]}">${name}</div>`;
+      }).join('');
+      const more = events.length > 2 ? `<div style="font-size:0.6rem;color:var(--muted)">+${events.length-2} more</div>` : '';
+      const holiday = getHoliday(y, m+1, d);
+      const holidayHTML = holiday ? `<div class="day-holiday" title="${holiday.name}">${holiday.emoji} <span>${holiday.name}</span></div>` : '';
+      html += `<div class="full-day${isToday?' today':''}${isSelected?' selected':''}${holiday?' has-holiday':''}" onclick="selectDay(${y},${m},${d})">
+        <div class="full-day-num">${d}</div>${holidayHTML}${evHTML}${more}</div>`;
+    }
+    document.getElementById('full-cal-grid').innerHTML = html;
+  }
+
+  function selectDay(y, m, d) {
+    selectedDay = { y, m, d };
+    document.getElementById('selected-date-label').textContent = `${MONTHS[m]} ${d}, ${y}`;
+    const pad = n => String(n).padStart(2,'0');
+    document.getElementById('sched-time').value = `${y}-${pad(m+1)}-${pad(d)}T09:00`;
+    renderDayJobs({ y, m, d });
+    renderFullCal();
+  }
+
+  function renderDayJobs({ y, m, d }) {
+    document.getElementById('day-jobs-title').textContent = `${MONTHS[m]} ${d}, ${y}`;
+    const dayJobs = allJobs.filter(j => {
+      const jd = new Date(j.next_run);
+      return jd.getFullYear()===y && jd.getMonth()===m && jd.getDate()===d;
+    });
+    const list = document.getElementById('day-jobs-list');
+    if (!dayJobs.length) { list.innerHTML = '<div class="empty">No messages this day</div>'; return; }
+    list.innerHTML = dayJobs.map(j => jobHTML(j)).join('');
+  }
+
+  function fullCalPrev() { fullCalDate = new Date(fullCalDate.getFullYear(), fullCalDate.getMonth()-1, 1); renderFullCal(); }
+  function fullCalNext() { fullCalDate = new Date(fullCalDate.getFullYear(), fullCalDate.getMonth()+1, 1); renderFullCal(); }
+
+
+  // ─── LOG ──────────────────────────────────────────────────
+  let logPage = 0;
+  const LOG_LIMIT = 50;
+
+  const SOURCE_LABELS = {
+    manual: ['badge-manual', 'Manual'],
+    broadcast: ['badge-broadcast', 'Broadcast'],
+    scheduled: ['badge-scheduled', 'Scheduled'],
+    'recurring:daily':  ['badge-recurring', '🔁 Daily'],
+    'recurring:weekly': ['badge-recurring', '🔁 Weekly'],
+    'recurring:yearly': ['badge-recurring', '🔁 Yearly'],
+  };
+
+  async function loadLogs(page = 0) {
+    logPage = page;
+    const search = document.getElementById('log-search')?.value || '';
+    const source = document.getElementById('log-source-filter')?.value || '';
+    const params = new URLSearchParams({ limit: LOG_LIMIT, offset: page * LOG_LIMIT, search, source });
+    const res = await fetch('/api/logs?' + params);
+    const data = await res.json();
+    renderLogs(data.logs, data.total);
+  }
+
+  function renderLogs(logs, total) {
+    const list = document.getElementById('log-list');
+    if (!logs.length) { list.innerHTML = '<div class="empty">No messages found</div>'; renderLogStats([]); renderLogPagination(0, 0); return; }
+
+    list.innerHTML = logs.map(l => {
+      const name = contacts.find(c => c.phone === l.phone)?.name || null;
+      const displayPhone = name ? `${name}<br><span style="font-size:0.7rem;color:var(--muted)">${l.phone}</span>` : l.phone;
+      const statusBadge = l.status === 'sent'
+        ? '<span class="badge badge-sent">✓ Sent</span>'
+        : '<span class="badge badge-failed">✗ Failed</span>';
+      const [srcClass, srcLabel] = SOURCE_LABELS[l.source] || ['badge-manual', l.source];
+      const srcBadge = `<span class="badge ${srcClass}">${srcLabel}</span>`;
+      return `<div class="log-item">
+        <div class="log-meta">
+          <div class="log-phone">${displayPhone}</div>
+          <div class="log-time">${l.sent_at}</div>
+        </div>
+        <div class="log-msg">${l.message}</div>
+        <div class="log-badges">${statusBadge}${srcBadge}</div>
+      </div>`;
+    }).join('');
+
+    renderLogStats(logs);
+    renderLogPagination(total, logPage);
+  }
+
+  function renderLogStats(logs) {
+    const sent = logs.filter(l => l.status === 'sent').length;
+    const failed = logs.filter(l => l.status === 'failed').length;
+    const sources = [...new Set(logs.map(l => l.source))];
+    document.getElementById('log-stats').innerHTML = `
+      <div class="stat-chip"><span>${sent}</span>Sent</div>
+      <div class="stat-chip"><span>${failed}</span>Failed</div>
+      <div class="stat-chip"><span>${logs.length}</span>Showing</div>
+    `;
+  }
+
+  function renderLogPagination(total, page) {
+    const pages = Math.ceil(total / LOG_LIMIT);
+    const el = document.getElementById('log-pagination');
+    if (pages <= 1) { el.innerHTML = ''; return; }
+    let html = '';
+    if (page > 0) html += `<button class="btn btn-sm btn-outline" onclick="loadLogs(${page-1})">‹ Prev</button>`;
+    html += `<span style="font-size:0.75rem;color:var(--muted);align-self:center;font-family:'Space Mono',monospace">Page ${page+1} / ${pages}</span>`;
+    if (page < pages - 1) html += `<button class="btn btn-sm btn-outline" onclick="loadLogs(${page+1})">Next ›</button>`;
+    el.innerHTML = html;
+  }
+
+  async function clearLogs() {
+    if (!confirm('Clear all message logs? This cannot be undone.')) return;
+    await fetch('/api/logs', { method: 'DELETE' });
+    showToast('Logs cleared');
+    loadLogs();
+  }
+
+  // ╔═══════════════════════════════════════════════════════╗
+  // ║  EDIT JOB — open modal, fill fields, save via PUT     ║
+  // ╚═══════════════════════════════════════════════════════╝
+  let editRepeat = 'none';
+
+  function openEditModal(jobId) {
+    const job = allJobs.find(j => j.id === jobId);
+    if (!job) return;
+    document.getElementById('edit-job-id').value = job.id;
+    document.getElementById('edit-phone').value = job.args[0];
+    document.getElementById('edit-msg').value = job.args[1];
+    // Parse next_run into datetime-local format
+    const d = new Date(job.next_run);
+    const pad = n => String(n).padStart(2, '0');
+    document.getElementById('edit-time').value =
+      `${d.getFullYear()}-${pad(d.getMonth()+1)}-${pad(d.getDate())}T${pad(d.getHours())}:${pad(d.getMinutes())}`;
+    setEditRepeat(job.repeat || 'none');
+    document.getElementById('edit-modal').classList.add('visible');
+  }
+
+  function closeEditModal() {
+    document.getElementById('edit-modal').classList.remove('visible');
+  }
+
+  function setEditRepeat(val) {
+    editRepeat = val;
+    ['none','daily','weekly','yearly'].forEach(r => {
+      document.getElementById(`edit-rep-${r}`).classList.toggle('active', r === val);
+    });
+  }
+
+  async function saveEditJob() {
+    const id      = document.getElementById('edit-job-id').value;
+    const phone   = document.getElementById('edit-phone').value.trim();
+    const message = document.getElementById('edit-msg').value.trim();
+    const localTime = document.getElementById('edit-time').value;
+    if (!phone || !message || !localTime) return showToast('Fill in all fields', true);
+    const send_at = new Date(localTime).toISOString().slice(0, 19);
+    const res = await fetch(`/api/jobs/${id}`, {
+      method: 'PUT',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ phone, message, send_at, repeat: editRepeat })
+    });
+    const data = await res.json();
+    if (data.success) {
+      showToast('Job updated!');
+      closeEditModal();
+      loadJobs();
+    } else showToast(data.error || 'Failed to update', true);
+  }
+
+  // ╔═══════════════════════════════════════════════════════╗
+  // ║  THEME — dark / light mode with localStorage persist  ║
+  // ╚═══════════════════════════════════════════════════════╝
+  function setTheme(theme) {
+    document.body.classList.toggle('light', theme === 'light');
+    localStorage.setItem('wpp_theme', theme);
+    document.getElementById('theme-dark')?.classList.toggle('active', theme === 'dark');
+    document.getElementById('theme-light')?.classList.toggle('active', theme === 'light');
+  }
+
+  function loadTheme() {
+    const saved = localStorage.getItem('wpp_theme') || 'dark';
+    setTheme(saved);
+  }
+
+  function updateSettingsStatus() {
+    const dot = document.getElementById('status-dot');
+    const isOnline = dot?.classList.contains('online');
+    const el = document.getElementById('settings-status-text');
+    if (el) el.textContent = isOnline ? '✅ Connected to WhatsApp' : '⚠️ Not connected — scan QR to link';
+  }
+
+  // ─── INIT ─────────────────────────────────────────────────
+  loadTheme();
+  applyQuickDelay(quickDelayMins);
+  initTagInput();
+  fetchCalendarEvents().then(() => { renderFullCal(); renderMiniCal(); });
+  // Attach phone formatting to all phone number inputs
+  ['send-phone', 'sched-phone', 'new-phone'].forEach(attachPhoneFormat);
+  checkStatus();
+  setInterval(checkStatus, 5000);
+
+  // One-time migration: import any localStorage contacts to the server
+  (async () => {
+    const legacy = JSON.parse(localStorage.getItem('wpp_contacts') || '[]');
+    if (legacy.length) {
+      for (const c of legacy) {
+        try {
+          await fetch('/api/contacts', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ name: c.name, phone: c.phone, tags: c.tags || [] })
+          });
+        } catch {}
+      }
+      localStorage.removeItem('wpp_contacts');
+      showToast(`Migrated ${legacy.length} contacts to server`);
+    }
+    fetchContacts();
+  })();
+  renderMiniCal();
+  loadJobs();
+  setInterval(loadJobs, 10000);
+</script>
+</body>
+</html>
