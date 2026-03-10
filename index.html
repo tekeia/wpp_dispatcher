@@ -928,6 +928,7 @@
         body: JSON.stringify({ tags: c.tags })
       });
       await fetchContacts();
+      renderTagFilters();
       setTimeout(() => {
         const el = document.getElementById(`tag-add-${contactId}`);
         if (el) el.focus();
@@ -936,12 +937,18 @@
     }
   }
 
-  function removeContactTag(contactIdx, tagIdx) {
-    contacts[contactIdx].tags.splice(tagIdx, 1);
-    saveContacts();
-    updateAllDropdowns();
-    renderContactTable();
+  async function removeContactTag(contactId, tagIdx) {
+    const c = contacts.find(c => c.id === contactId);
+    if (!c) return;
+    c.tags = (c.tags || []).filter((_, i) => i !== tagIdx);
+    await fetch(`/api/contacts/${contactId}/tags`, {
+      method: 'PUT',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ tags: c.tags })
+    });
+    await fetchContacts();
     renderTagFilters();
+    updateAllDropdowns();
     showToast('Tag removed');
   }
 
