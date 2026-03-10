@@ -1356,7 +1356,10 @@
     }
 
     const endpoint = phones.length > 1 ? '/api/send_bulk' : '/api/send';
-    const body = phones.length > 1 ? { phones, message } : { phone: phones[0], message };
+    const tagList = [...selectedSchedTags];
+    const body = phones.length > 1
+      ? { phones, message, tags: tagList.length ? tagList : undefined }
+      : { phone: phones[0], message };
     const res = await fetch(endpoint, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) });
     const data = await res.json();
     if (data.success) {
