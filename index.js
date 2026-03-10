@@ -38,7 +38,10 @@ client.on('qr', (qr) => {
 client.on('ready', () => {
     isReady = true;
     qrData = null;
-    console.log('WhatsApp client is ready!');
+    console.log('\n\x1b[42m\x1b[30m ✅ WHATSAPP CONNECTED! \x1b[0m');
+    console.log('\x1b[32m━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\x1b[0m');
+    console.log('\x1b[32m  WhatsApp client is ready to send!  \x1b[0m');
+    console.log('\x1b[32m━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\x1b[0m\n');
 });
 
 client.on('disconnected', () => {
