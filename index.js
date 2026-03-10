@@ -1,50 +1,54 @@
-const { Client, LocalAuth } = require('whatsapp-web.js');
-const qrcode = require('qrcode-terminal');
+const { default: makeWASocket, useMultiFileAuthState, DisconnectReason } = require('@whiskeysockets/baileys');
+const { Boom } = require('@hapi/boom');
 const express = require('express');
 const bodyParser = require('body-parser');
+const qrcode = require('qrcode-terminal');
+const P = require('pino');
 
 const app = express();
 app.use(bodyParser.json());
 
+let sock = null;
 let isReady = false;
 let qrData = null;
 
-const client = new Client({
-    authStrategy: new LocalAuth(),
-    puppeteer: {
-        headless: true,
-        executablePath: '/usr/bin/google-chrome-stable',
-        args: [
-            '--no-sandbox',
-            '--disable-setuid-sandbox',
-            '--disable-dev-shm-usage',
-            '--disable-accelerated-2d-canvas',
-            '--no-first-run',
-            '--no-zygote',
-            '--single-process',
-            '--disable-gpu'
-        ]
-    }
-});
+async function connectToWhatsApp() {
+    const { state, saveCreds } = await useMultiFileAuthState('auth_info');
 
-client.on('qr', (qr) => {
-    qrcode.generate(qr, { small: true });
-    qrData = qr;
-    console.log('QR Code generated - scan with WhatsApp');
-});
+    sock = makeWASocket({
+        auth: state,
+        printQRInTerminal: true,
+        logger: P({ level: 'silent' })
+    });
 
-client.on('ready', () => {
-    isReady = true;
-    qrData = null;
-    console.log('WhatsApp client is ready!');
-});
+    sock.ev.on('creds.update', saveCreds);
 
-client.on('disconnected', () => {
-    isReady = false;
-    console.log('WhatsApp disconnected');
-});
+    sock.ev.on('connection.update', (update) => {
+        const { connection, lastDisconnect, qr } = update;
 
-client.initialize();
+        if (qr) {
+            qrData = qr;
+            qrcode.generate(qr, { small: true });
+            console.log('QR Code generated - scan with WhatsApp');
+        }
+
+        if (connection === 'close') {
+            isReady = false;
+            qrData = null;
+            const shouldReconnect = (lastDisconnect.error instanceof Boom)
+                ? lastDisconnect.error.output.statusCode !== DisconnectReason.loggedOut
+                : true;
+            console.log('Connection closed. Reconnecting:', shouldReconnect);
+            if (shouldReconnect) connectToWhatsApp();
+        } else if (connection === 'open') {
+            isReady = true;
+            qrData = null;
+            console.log('WhatsApp client is ready!');
+        }
+    });
+}
+
+connectToWhatsApp();
 
 app.get('/status', (req, res) => {
     res.json({ ready: isReady, qr: qrData });
@@ -56,8 +60,8 @@ app.post('/send', async (req, res) => {
     if (!phone || !message) return res.status(400).json({ error: 'phone and message required' });
 
     try {
-        const chatId = phone.replace('+', '') + '@c.us';
-        await client.sendMessage(chatId, message);
+        const jid = phone.replace('+', '').replace(/\s/g, '') + '@s.whatsapp.net';
+        await sock.sendMessage(jid, { text: message });
         res.json({ success: true });
     } catch (err) {
         res.status(500).json({ error: err.message });
