@@ -2,6 +2,7 @@ from flask import Flask, render_template, request, jsonify
 from apscheduler.schedulers.background import BackgroundScheduler
 from apscheduler.jobstores.sqlalchemy import SQLAlchemyJobStore
 from datetime import datetime
+import pytz
 import requests
 import uuid
 import os
@@ -11,7 +12,7 @@ app = Flask(__name__)
 WHATSAPP_BRIDGE = "http://localhost:3001"
 
 jobstores = {'default': SQLAlchemyJobStore(url='sqlite:///jobs.db')}
-scheduler = BackgroundScheduler(jobstores=jobstores)
+scheduler = BackgroundScheduler(jobstores=jobstores, job_defaults={'misfire_grace_time': 60}, timezone=pytz.utc)
 scheduler.start()
 
 
@@ -48,30 +49,70 @@ def send_now():
     return jsonify({"success": True})
 
 
+@app.route('/api/send_bulk', methods=['POST'])
+def send_bulk():
+    data = request.json
+    phones = data.get('phones', [])
+    message = data.get('message')
+    if not phones or not message:
+        return jsonify({"error": "phones and message required"}), 400
+    for phone in phones:
+        send_whatsapp_message(phone, message)
+    return jsonify({"success": True, "sent": len(phones)})
+
+
 @app.route('/api/schedule', methods=['POST'])
 def schedule_message():
     data = request.json
-    phone = data.get('phone')
+    phones = data.get('phones') or ([data.get('phone')] if data.get('phone') else [])
     message = data.get('message')
     send_at = data.get('send_at')
+    repeat = data.get('repeat', 'none')  # none | daily | weekly | yearly
 
-    if not all([phone, message, send_at]):
-        return jsonify({"error": "phone, message and send_at required"}), 400
+    if not phones or not message or not send_at:
+        return jsonify({"error": "phones, message and send_at required"}), 400
+
+    if len(send_at) == 16:
+        send_at += ':00'
+
+    run_date = datetime.fromisoformat(send_at).replace(tzinfo=pytz.utc)
+    job_ids = []
 
     try:
-        # Handle both "2026-03-10T00:22" and "2026-03-10T00:22:00" formats
-        if len(send_at) == 16:
-            send_at += ':00'
-        run_date = datetime.fromisoformat(send_at)
-        job_id = str(uuid.uuid4())
-        scheduler.add_job(
-            send_whatsapp_message,
-            'date',
-            run_date=run_date,
-            args=[phone, message],
-            id=job_id
-        )
-        return jsonify({"success": True, "job_id": job_id, "scheduled_at": send_at})
+        for phone in phones:
+            job_id = str(uuid.uuid4())
+            if repeat == 'daily':
+                scheduler.add_job(
+                    send_whatsapp_message, 'cron',
+                    hour=run_date.hour, minute=run_date.minute,
+                    args=[phone, message], id=job_id,
+                    replace_existing=True
+                )
+            elif repeat == 'weekly':
+                scheduler.add_job(
+                    send_whatsapp_message, 'cron',
+                    day_of_week=run_date.strftime('%a').lower(),
+                    hour=run_date.hour, minute=run_date.minute,
+                    args=[phone, message], id=job_id,
+                    replace_existing=True
+                )
+            elif repeat == 'yearly':
+                scheduler.add_job(
+                    send_whatsapp_message, 'cron',
+                    month=run_date.month, day=run_date.day,
+                    hour=run_date.hour, minute=run_date.minute,
+                    args=[phone, message], id=job_id,
+                    replace_existing=True
+                )
+            else:
+                scheduler.add_job(
+                    send_whatsapp_message, 'date',
+                    run_date=run_date,
+                    args=[phone, message], id=job_id
+                )
+            job_ids.append(job_id)
+
+        return jsonify({"success": True, "job_ids": job_ids, "scheduled_at": send_at, "repeat": repeat})
     except Exception as e:
         return jsonify({"error": str(e)}), 500
 
@@ -80,10 +121,21 @@ def schedule_message():
 def list_jobs():
     jobs = []
     for job in scheduler.get_jobs():
+        trigger_type = type(job.trigger).__name__
+        repeat = 'none'
+        if trigger_type == 'CronTrigger':
+            fields = {f.name: str(f) for f in job.trigger.fields}
+            if fields.get('day_of_week') not in ('*', None) and str(fields.get('day_of_week')) != '*':
+                repeat = 'weekly'
+            elif fields.get('month') not in ('*', None) and str(fields.get('month')) != '*':
+                repeat = 'yearly'
+            else:
+                repeat = 'daily'
         jobs.append({
             "id": job.id,
             "next_run": str(job.next_run_time),
-            "args": job.args
+            "args": job.args,
+            "repeat": repeat
         })
     return jsonify(jobs)
 
