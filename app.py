@@ -59,6 +59,9 @@ def schedule_message():
         return jsonify({"error": "phone, message and send_at required"}), 400
 
     try:
+        # Handle both "2026-03-10T00:22" and "2026-03-10T00:22:00" formats
+        if len(send_at) == 16:
+            send_at += ':00'
         run_date = datetime.fromisoformat(send_at)
         job_id = str(uuid.uuid4())
         scheduler.add_job(
