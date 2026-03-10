@@ -1828,13 +1828,16 @@
       const eventBadge = l.event_id
         ? `<span class="badge" style="background:var(--surface2);color:var(--muted);border:1px solid var(--border);font-family:'Space Mono',monospace;letter-spacing:0.04em;">#${l.event_id}</span>`
         : '';
+      const srcTagRow = tagBadges
+        ? `<div style="display:flex;align-items:center;gap:4px;flex-wrap:wrap;">${srcBadge}${tagBadges}</div>`
+        : srcBadge;
       return `<div class="log-item">
         <div class="log-meta">
           <div class="log-phone">${displayPhone}</div>
           <div class="log-time">${l.sent_at}</div>
         </div>
         <div class="log-msg">${l.message}</div>
-        <div class="log-badges">${statusBadge}${srcBadge}${tagBadges}${eventBadge}</div>
+        <div class="log-badges">${statusBadge}${srcTagRow}${eventBadge}</div>
       </div>`;
     }).join('');
 
